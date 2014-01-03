@@ -5,21 +5,43 @@ import boto.sqs
 from boto.sqs import Message
 import logging
 from collections import deque
-class ServerInterface(object):
+from serverinterface import ServerInterface
+
+class Interface(ServerInterface):
     def __init__(self, init_message):
-        self.name = init_message['name']
-        self.command_q = init_message['command']
-        self.response_q = init_message['response']
-        self.zone = init_message['zone']
-        self.region = self.zone[:-1]
-        self.instance_id = init_message['instance-id']
-        self._unique = "%s-%s" % (self.name, self.instance_id)
+        super( Interface, self ).__init__(init_message )
         self.logger = logging.getLogger(self._unique)
+        self.logger.info( "GPU Interface created")
+        self._num_gpus = None
         self.status_queue = dequeue()
 
-    def send_init(self,  result_sqs, result_sqs, source_s3, result_s3,
-           data_settings, sample_block_size, pairs_block_size, nets_block_size, 
-           heartbeat_interval):
+    def send_init(self, aws_locations, block_sizes, data_settings, 
+            heartbeat_interval=10):
+        """
+        Send initialization information
+        aws_locations - tuple containing sqs queues and s3 buckets
+                        (source_sqs, result_sqs, source_s3, result_s3)
+        block_sizes - tuple containing the block sizes for gpu kernel
+                    (sample_block_size, pairs_block_size, nets_block_size)
+                    Note: This determines the shape of our buffered matrices
+        data_settings - dictionary describing the maximum sizes and data
+                        types for numpy matrices 
+                        {
+                         'source':[ ('mat_map_id', size, type index), ...]
+                         'results':[('rms', size, type index)]
+                        }
+                        mat_map_id - in ['em','sm','gm','nm']
+                        size - an int of max num bytes of this matrix
+                        type index - is the result of 
+                                masterdirac.utils.dtypes.to_index(np.dtype)
+        heartbeat_interval - how many runs before checking back home
+        """
+        self._aws_locations = aws_locations
+        source_sqs, result_sqs, source_s3, result_s3 = aws_locations
+        self._block_sizes = block_sizes
+        sample_block_size, pairs_block_size, nets_block_size = block_sizes
+        self._data_settings = data_settings
+        self._hb = heartbeat_interval
         self.logger.info("Initializing gpudirac-server" )
         gpu_message = {'message-type':'init-settings',
                  'result-sqs': result_sqs,
@@ -37,32 +59,14 @@ class ServerInterface(object):
         self.logger.debug("GPUInit message [%s]" % js_mess )
         return self._send_command( js_mess )
 
-    def _send_command( self, message):
+    @property
+    def num_gpus(self):
         """
-        Sends an arbitrary message to this gpu's command queue
+        Returns the number of gpus in this instance
         """
-        conn = boto.sqs.connect_to_region( 'us-east-1' )
-       
-        cq = conn.get_queue( self.command_q )
-        if cq is not None:
-            cq.write( Message(body=message) )
-            return True
-        else:
-            self.logger.warning("Unable to connect to [%s]" % self.command_q)
-            return False
-
-    def get_response( self ):
-        """
-        Grabs all responses and put the dicts in a status_queue
-        """
-        conn = boto.sqs.connect_to_region( 'us-east-1' )
-        rq = conn.get_queue( self.response_q )
-        if rq is not None:
-            messages = rq.get_messages(10)
-            for message in messages:
-                my_mess = message.get_body()
-                self.status_queue.append(json.loads(my_mess))
-                rq.delete_message(message)
-
-
-
+        if self._num_gpus is None:
+            if self.instance.instance_type == 'cg1.4xlarge':
+                self._num_gpus = 2
+            else:
+                self._num_gpus = 1
+        return self._num_gpus
