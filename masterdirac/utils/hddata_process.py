@@ -22,10 +22,11 @@ def get_from_s3( source_bucket, data, meta_data, annotation_data, syn_file, agil
     If force_write is True, it downloads and overwrites the current file.
     returns the local location of data, meta_data, annotation_data
     """
-    logging.info("Running: getFromS3('%s','%s','%s','%s','%s',%s)"%( source_bucket, data, meta_data, annotation_data, data_dir, str(force_write) ))
+    logger = logging.getLogger("get_from_s3")
+    logger.info("Running: getFromS3('%s','%s','%s','%s','%s',%s)"%( source_bucket, data, meta_data, annotation_data, data_dir, str(force_write) ))
     #check that data dir exists, if not create it
     if not os.path.exists(data_dir):
-        logging.info( "Creating directory [%s]" % data_dir )
+        logger.info( "Creating directory [%s]" % data_dir )
         os.makedirs(data_dir)
 
     conn = boto.connect_s3()
@@ -38,21 +39,21 @@ def get_from_s3( source_bucket, data, meta_data, annotation_data, syn_file, agil
         exists = os.path.exists(local_path)
         local_file_list.append(local_path)
         if exists:
-            logging.warning("%s exists"%local_path)
+            logger.warning("%s exists"%local_path)
         if force_write or not exists:
             if force_write:
-                logging.info('force_writ on')
+                logger.info('force_writ on')
         try:
-            logging.info( "Transferring s3://%s/%s to %s" % (source_bucket,fname, local_path ))
+            logger.info( "Transferring s3://%s/%s to %s" % (source_bucket,fname, local_path ))
             k = Key(b)
             k.key = fname
             k.get_contents_to_filename(local_path)
-            logging.info("Transfer complete")
+            logger.info("Transfer complete")
         except S3ResponseError as sre:
-            logging.error("bucket:[%s] file:[%s] upload." % (source_bucket,fname))
-            logging.error(str(sre))
+            logger.error("bucket:[%s] file:[%s] upload." % (source_bucket,fname))
+            logger.error(str(sre))
             raise(sre)
-    logging.info("getFromS3 Complete")
+    logger.info("Complete")
     return local_file_list
 
 class HDDataGen:
@@ -64,9 +65,14 @@ class HDDataGen:
                     will be written
     """
     def __init__(self, working_dir ):
+        self.logger = logging.getLogger('HDDataGen')
         self.working_dir = working_dir
 
     def _get_data( self, data_file, annotations_file):
+        """
+        Given data file and annotations, make dataframe indexed by
+        ProbeName with control probes dropped
+        """
         data_orig = parsers.read_table( join(self.working_dir,data_file) )
         annot = self._get_annotations( annotations_file)
         #set data index
@@ -75,18 +81,25 @@ class HDDataGen:
 
     def generate_dataframe(self, data_file, annotations_file,
             agilent_file, synonym_file, network_table, source_id ):
+        self.logger.debug("Getting base data table")
         data_orig = self._get_data( data_file, annotations_file )
+        self.logger.debug("Mapping probes to genes")
         probe_map = self._get_probe_mapping( agilent_file )
+        self.logger.debug("Getting genes in given networks")
         network_genes = self._get_network_genes( network_table, source_id )
+        self.logger.debug("Adding synonyms")
         syn_map = self._get_synonyms( probe_map, network_genes, synonym_file )
+        self.logger.debug("Mapping probes to genes in networks")
         ng2pm = self._get_probe_to_gene_map( probe_map, syn_map )
+        self.logger.info("Creating DataFrame")
         new_df = DataFrame(np.zeros( (len(ng2pm), len(data_orig.columns))),
             index=ng2pm.keys(), columns=data_orig.columns )
         #map each network gene to the median of synonymous probes
-        test = True
+        self.logger.debug("Aggregating multiple probes to single genes"
+                " as median values" )
         for k, probes in ng2pm.iteritems():
             new_df.ix[k] = data_orig.ix[probes].median()
-        nm_size = self._estimate_net_size( ng2pm )
+        nm_size = self._estimate_net_map( ng2pm )
         return new_df, nm_size
 
     def _get_probe_mapping(self, agilent_file):
@@ -173,9 +186,11 @@ class HDDataGen:
         Writes the dataframe(cleaned and aggregated source data) and the
         metadata file to the given S3 bucket
         """
+        self.logger.info("Sending cleaned dataframe to s3://%s/%s" % (
+            bucket_name, dataframe_name) )
         conn = boto.connect_s3()
         bucket = conn.create_bucket(bucket_name, location=location)
-        dataframe.save('temp.tmp')
+        dataframe.to_pickle('temp.tmp')
         for fname in [dataframe_name]:
             k = Key(bucket)
             k.key = dataframe_name

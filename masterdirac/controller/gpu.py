@@ -2,12 +2,12 @@ import json
 import boto
 import boto.utils
 import boto.sqs
-from boto.sqs import Message
+from boto.sqs.message import Message
 import logging
 from collections import deque
-from serverinterface import ServerInterface
+import serverinterface
 
-class Interface(ServerInterface):
+class Interface(serverinterface.ServerInterface):
     def __init__(self, init_message):
         super( Interface, self ).__init__(init_message )
         self.logger = logging.getLogger(self._unique)

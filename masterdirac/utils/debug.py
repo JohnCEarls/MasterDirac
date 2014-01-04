@@ -122,8 +122,7 @@ class S3TimedRotatatingFileHandler(TimedRotatingFileHandler):
             self.stream = None
         # get the time that this sequence started at and make it a TimeTuple
         currentTime = int(time.time())
-
-      dstNow = time.localtime(currentTime)[-1]
+        dstNow = time.localtime(currentTime)[-1]
         t = self.rolloverAt - self.interval
         if self.utc:
             timeTuple = time.gmtime(t)

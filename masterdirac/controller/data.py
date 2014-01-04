@@ -2,19 +2,19 @@ import json
 import boto
 import boto.utils
 import boto.sqs
-from boto.sqs import Message
+from boto.sqs.message import Message
 import logging
 from collections import deque
-from serverinterface import ServerInterface
+import serverinterface
 
-class Interface(ServerInterface):
+class Interface(serverinterface.ServerInterface):
     def __init__(self, init_message):
         super( Interface, self ).__init__(init_message )
         self.logger = logging.getLogger(self._unique)
         self.logger.info("Data Interface created")
         self.num_nodes = init_message['num-nodes']
 
-   def send_init(self, aws_locations, source_files, network_settings, 
+    def send_init(self, aws_locations, source_files, network_settings, 
                     block_sizes, gpu_mem_max):
         self._aws_locations = aws_locations
         data_sqs_queue, gpu_sqs_queue, working_bucket = aws_locations
@@ -45,6 +45,6 @@ class Interface(ServerInterface):
                         'strain': strain,
                         'shuffle': shuffle,
                         'k': k}
-        js_mess = json.dumps( js_mess ):
+        js_mess = json.dumps( data_mess )
         self.logger.debug("Sending run message[%s]", js_mess)
         self._send_command( js_mess )

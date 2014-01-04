@@ -2,13 +2,67 @@ import json
 import boto
 import boto.utils
 import boto.sqs
-from boto.sqs import Message
+from boto.sqs.message import Message
 import logging
-import gpu
-import data
 from masterdirac.utils import dtypes
 import numpy as np
 import collections
+
+
+class ServerInterface(object):
+    def __init__(self, init_message):
+        self.name = init_message['name']
+        self.command_q = init_message['command']
+        self.response_q = init_message['response']
+        self.zone = init_message['zone']
+        self.region = self.zone[:-1]
+        self.instance_id = init_message['instance-id']
+        self._unique = "%s-%s" % (self.name, self.instance_id)
+        self.logger = logging.getLogger(self._unique)
+
+    @property
+    def conn(self):
+        return boto.ec2.connect_to_region( self.region )
+
+    @property
+    def instance(self):
+        inst = self.conn.get_only_instances(instance_ids=[self.instance_id])
+        return inst[0]
+
+    def get_responses( self ):
+        """
+        Grabs all responses and put the dicts in a status_queue
+        """
+        conn = boto.sqs.connect_to_region( 'us-east-1' )
+        rq = conn.get_queue( self.response_q )
+        if rq is not None:
+            messages = rq.get_messages(10)
+            for message in messages:
+                my_mess = message.get_body()
+                self.status_queue.append(json.loads(my_mess))
+                rq.delete_message(message)
+
+    def _send_command( self, message):
+        """
+        Sends an arbitrary message to this gpu's command queue
+        """
+        conn = boto.sqs.connect_to_region( 'us-east-1' )
+        cq = conn.get_queue( self.command_q )
+        if cq is not None:
+            cq.write( Message(body=message) )
+            return True
+        else:
+            self.logger.warning("Unable to connect to [%s]" % self.command_q)
+            return False
+
+    def terminate(self):
+        self.logger.warning("Sending term signal")
+        term_mess = {}
+        term_mess['message-type'] = 'termination-notice'
+        self._send_command(json.dumps(term_mess))
+
+import gpu
+import data
 class ServerManager:
     """
     Manages and Initializes GPU and Data Servers
@@ -28,9 +82,11 @@ class ServerManager:
         self.aws_locations = {}
         self.gpu_ids = {}
         #now we actually set all of these variables
+        self.logger.debug("Loading Configs")
         self._load_config(config)
         self._configure_data(config)
         self._configure_gpu(config, data_sizes)
+        self.logger.debug("exit __init__")
 
     def add_work( self, work):
         for job in work:
@@ -107,15 +163,13 @@ class ServerManager:
                 self.network_settings, self.block_sizes, self.get_mem_max() )
         self.data_servers[serv._unique] = serv
 
-   def get_mem_max(self):
-       """
-       Return the maximum memory of a gpu,
-       This should be handled by master server, and I need to 
-       remove the functionality from data servers ... but not today
-       """
-       return 2*1024*1024*1024
-
-
+    def get_mem_max(self):
+        """
+        Return the maximum memory of a gpu,
+        This should be handled by master server, and I need to 
+        remove the functionality from data servers ... but not today
+        """
+        return 2*1024*1024*1024
 
     @property
     def init_q(self):
@@ -137,9 +191,9 @@ class ServerManager:
         """
         self._init_q = config.get( 'run_settings','server_initialization_queue') 
         self.block_sizes = (
-                config.getint('run_settings', 'sample_block_sizes'),
-                config.getint('run_settings', 'pairs_block_sizes'),
-                config.getint('run_settings', 'nets_block_sizes') )
+                config.getint('run_settings', 'sample_block_size'),
+                config.getint('run_settings', 'pairs_block_size'),
+                config.getint('run_settings', 'nets_block_size') )
         self.k = config.getint('run_settings', 'k')
         self.base_heartbeat = config.getint('run_settings','heartbeat_interval')
 
@@ -199,7 +253,7 @@ class ServerManager:
         sample_block_size, pairs_block_size, net_block_size = block_sizes
         b_samp = rup(max_nsamples, sample_block_size)
         b_comp = rup(max_comp, pairs_block_size)
-        b_nets = rup(max_nnets+1, nets_block_size)
+        b_nets = rup(max_nnets+1, net_block_size)
         em = b_samp*max_ngenes*np.float32(1).nbytes
         sm = b_samp*k*np.int32(1).nbytes
         gm = 2*b_comp*np.int32(1).nbytes
@@ -218,55 +272,7 @@ class ServerManager:
                 ]
                 }
         self._gpu_mem_req = em+sm+gm+rt+srt+rms
+if __name__ == "__main__":
+    si = ServerInterface({'name':'test', 'command':'test', 
+        'response':'test', 'instance-id':'test', 'zone':'test'})
 
-class ServerInterface(object):
-    def __init__(self, init_message):
-        self.name = init_message['name']
-        self.command_q = init_message['command']
-        self.response_q = init_message['response']
-        self.zone = init_message['zone']
-        self.region = self.zone[:-1]
-        self.instance_id = init_message['instance-id']
-        self._unique = "%s-%s" % (self.name, self.instance_id)
-        self.logger = logging.getLogger(self._unique)
-
-    @property
-    def conn(self):
-        return boto.ec2.connect_to_region( self.region )
-
-    @property
-    def instance(self):
-        inst = self.conn.get_only_instances(instance_ids=[self.instance_id])
-        return inst[0]
-
-    def get_responses( self ):
-        """
-        Grabs all responses and put the dicts in a status_queue
-        """
-        conn = boto.sqs.connect_to_region( 'us-east-1' )
-        rq = conn.get_queue( self.response_q )
-        if rq is not None:
-            messages = rq.get_messages(10)
-            for message in messages:
-                my_mess = message.get_body()
-                self.status_queue.append(json.loads(my_mess))
-                rq.delete_message(message)
-
-    def _send_command( self, message):
-        """
-        Sends an arbitrary message to this gpu's command queue
-        """
-        conn = boto.sqs.connect_to_region( 'us-east-1' )
-        cq = conn.get_queue( self.command_q )
-        if cq is not None:
-            cq.write( Message(body=message) )
-            return True
-        else:
-            self.logger.warning("Unable to connect to [%s]" % self.command_q)
-            return False
-
-    def terminate(self):
-        self.logger.warning("Sending term signal")
-        term_mess = {}
-        term_mess['message-type'] = 'termination-notice'
-        self._send_command(json.dumps(term_mess))
