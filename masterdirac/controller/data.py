@@ -12,6 +12,7 @@ class Interface(ServerInterface):
         super( Interface, self ).__init__(init_message )
         self.logger = logging.getLogger(self._unique)
         self.logger.info("Data Interface created")
+        self.num_nodes = init_message['num-nodes']
 
    def send_init(self, aws_locations, source_files, network_settings, 
                     block_sizes, gpu_mem_max):

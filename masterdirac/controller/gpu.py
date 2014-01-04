@@ -15,7 +15,7 @@ class Interface(ServerInterface):
         self._num_gpus = None
         self.status_queue = dequeue()
 
-    def send_init(self, aws_locations, block_sizes, data_settings, 
+    def send_init(self, aws_locations, block_sizes, data_settings, gpu_id=0, 
             heartbeat_interval=10):
         """
         Send initialization information
