@@ -13,6 +13,7 @@ class Interface(serverinterface.ServerInterface):
         self.logger = logging.getLogger(self._unique)
         self.logger.info("Data Interface created")
         self.num_nodes = init_message['num-nodes']
+        self._active = False
 
     def send_init(self, aws_locations, source_files, network_settings, 
                     block_sizes, gpu_mem_max):
@@ -44,7 +45,36 @@ class Interface(serverinterface.ServerInterface):
         data_message = {'message-type':'run-instructions',
                         'strain': strain,
                         'shuffle': shuffle,
-                        'k': k}
-        js_mess = json.dumps( data_mess )
+                        'k': k,
+                        'num-runs': num_runs
+                        }
+        js_mess = json.dumps( data_message )
         self.logger.debug("Sending run message[%s]", js_mess)
         self._send_command( js_mess )
+        self._active = True
+
+    def _check_complete(self):
+        while len(self.status_queue) > 0:
+            message = self.status_queue.popleft()
+            self._handle_response( message )
+
+    def _handle_response(self, message ):
+        if message['message-type'] == 'run-complete':
+            self.logger.debug("Response: %s" % json.dumps(message))
+            self._active = False
+        else:
+            self.logger.error("Error[Unexpected Response] : %s" %\
+                    json.dumps( message ))
+            Exception("Unexpected Response")
+
+    @property
+    def terminated(self):
+        return self._terminated
+
+    def busy(self):
+        """
+        Is it currently working in a run
+        """
+        self._check_complete()
+        return self._active
+

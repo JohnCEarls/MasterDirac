@@ -5,7 +5,12 @@ import numpy as np
 import datadirac.data
 import os.path
 import logging
+import controller.serverinterface
 def init_data( config ):
+    """
+    Grabs data sources from s3, creates the dataframe needed
+    by the system and moves it to another s3 bucket
+    """
     args = ( config.get('source_data', 'bucket'),
             config.get('source_data', 'data_file'),
             config.get('source_data', 'meta_file'),
@@ -62,9 +67,11 @@ def get_work( config ):
 def run( data_sizes, config):
     logger = logging.getLogger("MasterServer.run")
     logger.info("Getting work")
-    work = get_work()
-    logger.warning("DEBUG CODE HERE")
-    logger.warning("Only creating one strain")
+    work = get_work( config )
+    logger.warning("*"*17)
+    logger.warning("*DEBUG CODE HERE*")
+    logger.warning("*Only creating one strain*")
+    logger.warning("*"*17)
     work = work[:1]
     logger.info("Creating Server Manager")
     manager = controller.serverinterface.ServerManager(data_sizes,config)
@@ -76,11 +83,13 @@ def run( data_sizes, config):
         manager.send_run()
         manager.inspect()
         logger.debug("Ending work cycle")
+    manager.terminate_data_servers()
     logger.info("Exiting run")
 
 def main():
     import argparse
     import ConfigParser 
+    from masterdirac.utils import debug
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', help='Configfile name', required=True)
     args = parser.parse_args()
@@ -88,6 +97,7 @@ def main():
     debug.initLogging( args.config )
     logger = logging.getLogger(name)
     logger.info("Getting config[%s]" % args.config)
-    config = ConfigParser.ConfigParser( args.config )
+    config = ConfigParser.ConfigParser()
+    config.read( args.config )
     data_sizes = init_data( config )
     run( data_sizes, config)

@@ -7,7 +7,7 @@ import logging
 from masterdirac.utils import dtypes
 import numpy as np
 import collections
-
+import time
 
 class ServerInterface(object):
     def __init__(self, init_message):
@@ -19,6 +19,8 @@ class ServerInterface(object):
         self.instance_id = init_message['instance-id']
         self._unique = "%s-%s" % (self.name, self.instance_id)
         self.logger = logging.getLogger(self._unique)
+        self.status_queue = collections.deque()
+        self._terminated = False
 
     @property
     def conn(self):
@@ -35,12 +37,15 @@ class ServerInterface(object):
         """
         conn = boto.sqs.connect_to_region( 'us-east-1' )
         rq = conn.get_queue( self.response_q )
+        responses = False
         if rq is not None:
             messages = rq.get_messages(10)
             for message in messages:
                 my_mess = message.get_body()
                 self.status_queue.append(json.loads(my_mess))
                 rq.delete_message(message)
+                responses = True
+        return responses
 
     def _send_command( self, message):
         """
@@ -60,6 +65,7 @@ class ServerInterface(object):
         term_mess = {}
         term_mess['message-type'] = 'termination-notice'
         self._send_command(json.dumps(term_mess))
+        self._terminated = True
 
 import gpu
 import data
@@ -92,6 +98,10 @@ class ServerManager:
         for job in work:
             self.work.appendleft(job)
 
+    def terminate_data_servers(self):
+        for k,server in self.data_servers.iteritems():
+            server.terminate()
+            self.logger.info("%s(data server): sent termination signal" % k)
 
     def has_work(self):
         return len(self.work) > 0
@@ -111,7 +121,7 @@ class ServerManager:
         chunksize = 100
         if len(self.data_servers):
             for k,server in self.data_servers.iteritems():
-                if len(self.work):
+                if len(self.work) and not server.busy():
                     current_job = self.work.pop()
                     strain, total_runs, shuffle, k = current_job
                     num_runs = min( chunksize, total_runs)
@@ -124,17 +134,29 @@ class ServerManager:
         else:
             self.logger.warning("No data servers")
 
-    def inspect():
+    def inspect(self):
         """
         TODO: load balancing, check for problems, etc
+        Currently just grabs messages and puts them in deque
         """
-        pass
+        for k,server in self.data_servers.iteritems():
+            if server.get_responses():
+                self.logger.info("%s(data server): has response" % k)
+        for k,server in self.gpu_servers.iteritems():
+            if server.get_responses():
+                self.logger.info("%s(gpu server): has response" % k)
 
     def _handle_server_init( self, message ):
+        self.logger.debug("Handling message %s" % json.dumps( message ) )
         if message['message-type'] == 'gpu-init':
+            self.logger.info("Initializing gpu")
             self._handle_gpu_init( message )
-        if message['message-type'] == 'data-init':
+        elif message['message-type'] == 'data-gen-init':
+            self.logger.info("Initializing Data")
             self._handle_data_init( message )
+        else:
+            self.logger.error("Init. Message: %s" %  json.dumps( message ) )
+            raise Exception("No initialization found in initialization message")
 
     def _handle_gpu_init( self, message):
         serv = gpu.Interface( message )
@@ -177,11 +199,13 @@ class ServerManager:
         Returns the Server Initialization Queue
         """
         conn = boto.sqs.connect_to_region('us-east-1')
-        iq = conn.get_queue( self._init_q )
+        iq = conn.create_queue( self._init_q )
+        ctr = 0
         while not iq:
-            time.sleep(1)
+            time.sleep(max(ctr,60))
             self.logger.warning("Creating Server Initialization Queue")
             iq = conn.create_queue( self.init_q )
+            ctr = 1.25 *ctr + 1
         return iq
 
 

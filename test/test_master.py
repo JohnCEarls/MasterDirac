@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import ConfigParser
 import masterdirac.server as master
 import masterdirac.controller.serverinterface as si
@@ -44,8 +45,10 @@ def test_ServerManager_init(data_sizes, config ):
     work = master.get_work(config)
     manager = si.ServerManager(data_sizes, config )
     logger.info("ServerManager initialized")
+    logger.info( "adding work")
     manager.add_work( work )
     assert manager.has_work()
+    logger.info( "Manager has_work" )
     logger.info("*"*8)
     logger.info("*PASSED*")
     logger.info("*"*8)

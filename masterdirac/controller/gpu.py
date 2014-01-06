@@ -13,7 +13,6 @@ class Interface(serverinterface.ServerInterface):
         self.logger = logging.getLogger(self._unique)
         self.logger.info( "GPU Interface created")
         self._num_gpus = None
-        self.status_queue = dequeue()
 
     def send_init(self, aws_locations, block_sizes, data_settings, gpu_id=0, 
             heartbeat_interval=10):
