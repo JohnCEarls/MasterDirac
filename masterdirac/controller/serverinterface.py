@@ -8,6 +8,7 @@ from masterdirac.utils import dtypes
 import numpy as np
 import collections
 import time
+import boto.ec2
 
 class ServerInterface(object):
     def __init__(self, init_message):
