@@ -32,7 +32,7 @@ if sys.version_info < (2, 7):
 from setuptools import setup, find_packages
 console_scripts = ['masterdirac-logserver = masterdirac.utils.debug:startLogger',
                    'masterdirac = masterdirac.server:main' ]
-extra = dict(install_requires=["boto>=2.9.9"],
+extra = dict(install_requires=["boto>=2.9.9", "datadirac"],
             entry_points=dict(console_scripts=console_scripts),
              zip_safe=False)
 VERSION = '0.0.0'#actually set in utils.static

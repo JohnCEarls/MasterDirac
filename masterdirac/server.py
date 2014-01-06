@@ -50,6 +50,17 @@ def init_data( config ):
                 max_nsamples, max_ngenes, max_nnets, max_comp) )
     return (max_nsamples, max_ngenes, max_nnets, max_comp)
 
+def init_infrastructure( config ):
+    logger = logging.getLogger('init_infrastructure')
+    #make sure init queue is available
+    conn = boto.sqs.connect_to_region( 'us-east-1' )
+    q = conn.create_queue( 
+            config.get('run_settings', 'server_initialization_queue') )
+    if not q:
+        logger.error("Init Q not created")
+        raise Exception("Unable to initialize Init Q")
+
+
 def get_work( config ):
     """
     Returns list of tuples of the form
@@ -99,5 +110,6 @@ def main():
     logger.info("Getting config[%s]" % args.config)
     config = ConfigParser.ConfigParser()
     config.read( args.config )
+    init_infrastructure( config )
     data_sizes = init_data( config )
     run( data_sizes, config)

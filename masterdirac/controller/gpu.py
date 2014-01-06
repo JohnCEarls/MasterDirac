@@ -52,7 +52,7 @@ class Interface(serverinterface.ServerInterface):
                  'sample-block-size': sample_block_size,
                  'nets-block-size': nets_block_size,
                  'pairs-block-size': pairs_block_size,
-                 'hearbeat-interval': heartbeat_interval
+                 'heartbeat-interval': heartbeat_interval
                 }
         js_mess = json.dumps( gpu_message )
         self.logger.debug("GPUInit message [%s]" % js_mess )
