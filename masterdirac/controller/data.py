@@ -41,12 +41,13 @@ class Interface(serverinterface.ServerInterface):
         self.logger.debug("DataInit message [%s]" % js_mess)
         self._send_command( js_mess )
 
-    def send_run(self, strain, num_runs, shuffle, k):
+    def send_run(self, run_id, strain, num_runs, shuffle, k):
         data_message = {'message-type':'run-instructions',
                         'strain': strain,
                         'shuffle': shuffle,
                         'k': k,
-                        'num-runs': num_runs
+                        'num-runs': num_runs,
+                        'run-id': run_id
                         }
         js_mess = json.dumps( data_message )
         self.logger.debug("Sending run message[%s]", js_mess)

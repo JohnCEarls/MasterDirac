@@ -119,17 +119,20 @@ class ServerManager:
         Sends chunks of work from the work queue
         to available data clusters
         """
+        self.logger.debug("*"*30)
+        self.logger.debug("* DEBUG!!!!! Chunksize is 100 *")
+        self.logger.debug("*"*30)
         chunksize = 100
         if len(self.data_servers):
             for k,server in self.data_servers.iteritems():
                 if len(self.work) and not server.busy():
                     current_job = self.work.pop()
-                    strain, total_runs, shuffle, k = current_job
+                    run_id, strain, total_runs, shuffle, k = current_job
                     num_runs = min( chunksize, total_runs)
                     total_runs -= num_runs
                     if total_runs > 0:
-                        self.work.append( ( strain, total_runs, shuffle, k ) )
-                    server.send_run( strain, num_runs, shuffle, k )
+                        self.work.append( ( run_id, strain, total_runs, shuffle, k ) )
+                    server.send_run(run_id, strain, num_runs, shuffle, k )
                 else:
                     self.logger.info("No jobs")
         else:

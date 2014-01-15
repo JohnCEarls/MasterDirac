@@ -1,4 +1,5 @@
 import boto
+import boto.dynamodb2
 from boto.s3.key import Key
 from utils import hddata_process
 import numpy as np
@@ -6,6 +7,13 @@ import datadirac.data
 import os.path
 import logging
 import controller.serverinterface
+import json
+import base64
+import random
+import string
+from boto.dynamodb2.table import Table
+import datetime
+from boto.dynamodb2.items import Item
 def init_data( config ):
     """
     Grabs data sources from s3, creates the dataframe needed
@@ -60,8 +68,33 @@ def init_infrastructure( config ):
         logger.error("Init Q not created")
         raise Exception("Unable to initialize Init Q")
 
+def add_run_meta( config ):
+    logger = logging.getLogger('add_run_meta')
+    logger.info('Adding metadata for this run')
+    conn = boto.dynamodb2.connect_to_region( 'us-east-1' )
+    run_meta_table = config.get('run_settings', 'run_meta_table')
+    run_id = get_run_id( config )
+    table = Table( run_meta_table, connection = conn )
+    if table.query_count( run_id__eq=run_id ) == 0:
+        timestamp = datetime.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
+        item = Item( table, data={'run_id':run_id,  'timestamp':timestamp} )
+        item['config'] = base64.b64encode( json.dumps( config._sections ) )
+        #k is in config, but this will be what most queries are interested in
+        #so no need to make all clients decode64 and load json
+        item['k'] = config.get('run_settings', 'k')
+        item.save()
+    return run_id
 
-def get_work( config ):
+
+def get_run_id( config ):
+    r_id = config.get('run_settings', 'run_id')
+    if not r_id:
+        #randomly generate run_id
+        r_id = ''.join(random.choice(string.ascii_lowercase) 
+                for x in range(5))
+    return r_id
+
+def get_work( config, perm=True ):
     """
     Returns list of tuples of the form
     (strain, num_runs, shuffle, k)
@@ -73,17 +106,21 @@ def get_work( config ):
     p = config.getint('run_settings', 'permutations')
     k = config.getint('run_settings', 'k')
     strains = md.get_strains()
-    return [(strain, p, True, k) for strain in md.get_strains()]
+    run_id = add_run_meta( config )
+    if perm:
+        return [(run_id, strain, p, True, k) for strain in md.get_strains()]
+    else:
+        return [(run_id, strain, 1, False, k) for strain in md.get_strains()]
 
 def run( data_sizes, config):
     logger = logging.getLogger("MasterServer.run")
     logger.info("Getting work")
-    work = get_work( config )
+    work = get_work( config, perm = False )
     logger.warning("*"*17)
     logger.warning("*DEBUG CODE HERE*")
     logger.warning("*Only creating one strain*")
     logger.warning("*"*17)
-    work = work[:1]
+    #work = work[:1]
     logger.info("Creating Server Manager")
     manager = controller.serverinterface.ServerManager(data_sizes,config)
     logger.info("Adding work to manager")
