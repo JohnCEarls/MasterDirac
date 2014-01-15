@@ -85,7 +85,6 @@ def add_run_meta( config ):
         item.save()
     return run_id
 
-
 def get_run_id( config ):
     r_id = config.get('run_settings', 'run_id')
     if not r_id:
@@ -115,16 +114,12 @@ def get_work( config, perm=True ):
 def run( data_sizes, config):
     logger = logging.getLogger("MasterServer.run")
     logger.info("Getting work")
-    work = get_work( config, perm = False )
-    logger.warning("*"*17)
-    logger.warning("*DEBUG CODE HERE*")
-    logger.warning("*Only creating one strain*")
-    logger.warning("*"*17)
-    #work = work[:1]
+    #work = get_work( config, perm = False )
     logger.info("Creating Server Manager")
     manager = controller.serverinterface.ServerManager(data_sizes,config)
     logger.info("Adding work to manager")
-    manager.add_work( work )
+    manager.add_work( get_work(config, perm=False) )
+    manager.add_work( get_work(config, perm=True) )
     while manager.has_work():
         logger.debug("Starting work cycle")
         manager.poll_for_server()

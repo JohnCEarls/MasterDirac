@@ -119,10 +119,7 @@ class ServerManager:
         Sends chunks of work from the work queue
         to available data clusters
         """
-        self.logger.debug("*"*30)
-        self.logger.debug("* DEBUG!!!!! Chunksize is 100 *")
-        self.logger.debug("*"*30)
-        chunksize = 100
+        chunksize = 1000
         if len(self.data_servers):
             for k,server in self.data_servers.iteritems():
                 if len(self.work) and not server.busy():
