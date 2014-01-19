@@ -109,7 +109,7 @@ def get_work( config, perm=True ):
     if perm:
         return [(run_id, strain, p, True, k) for strain in md.get_strains()]
     else:
-        return [(run_id, strain, 1, False, k) for strain in md.get_strains()]
+        return [(run_id, strain, 1, False, k) for strain in md.get_strains() ]
 
 def run( data_sizes, config):
     logger = logging.getLogger("MasterServer.run")
@@ -126,7 +126,7 @@ def run( data_sizes, config):
         manager.send_run()
         manager.inspect()
         logger.debug("Ending work cycle")
-    manager.terminate_data_servers()
+    #manager.terminate_data_servers()
     logger.info("Exiting run")
 
 def main():

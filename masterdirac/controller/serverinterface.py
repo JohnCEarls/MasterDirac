@@ -93,6 +93,7 @@ class ServerManager:
         self._load_config(config)
         self._configure_data(config)
         self._configure_gpu(config, data_sizes)
+        assert self._gpu_mem_req < self.get_mem_max, "Not enough memory on gpu"
         self.logger.debug("exit __init__")
 
     def add_work( self, work):
