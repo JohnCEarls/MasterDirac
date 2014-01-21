@@ -18,13 +18,14 @@ class Interface(serverinterface.ServerInterface):
     def send_init(self, aws_locations, source_files, network_settings, 
                     block_sizes, gpu_mem_max):
         self._aws_locations = aws_locations
-        data_sqs_queue, gpu_sqs_queue, working_bucket = aws_locations
+        data_sqs_queue, data_sqs_queue_truth, gpu_sqs_queue, working_bucket = aws_locations
         self._source_files = source_files
         ds_bucket, data_file, meta_file = source_files
         network_table, network_source = network_settings
         sample_block_size, pairs_block_size, nets_block_size = block_sizes
         data_message = {'message-type':'init-settings',
                         'data_sqs_queue': data_sqs_queue,
+                        'data_sqs_queue_truth': data_sqs_queue_truth,
                         'gpu_sqs_queue': gpu_sqs_queue,
                         'working_bucket': working_bucket,
                         'ds_bucket': ds_bucket,

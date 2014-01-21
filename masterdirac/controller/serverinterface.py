@@ -237,6 +237,7 @@ class ServerManager:
     def _configure_data_aws_locations(self, config):
         self.aws_locations['data'] = (
                 config.get( 'intercomm_settings', 'sqs_from_data_to_agg' ),
+                config.get( 'intercomm_settings', 'sqs_from_data_to_agg_truth'),
                 config.get( 'intercomm_settings', 'sqs_from_data_to_gpu' ),
                 config.get( 'intercomm_settings', 's3_from_data_to_gpu') )
 
