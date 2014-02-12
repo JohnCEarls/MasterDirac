@@ -120,7 +120,7 @@ def run( data_sizes, config):
     logger.info("Adding work to manager")
     manager.add_work( get_work(config, perm=False) )
     manager.add_work( get_work(config, perm=True) )
-    while manager.has_work():
+    while True or manager.has_work():
         logger.debug("Starting work cycle")
         manager.poll_for_server()
         manager.send_run()
