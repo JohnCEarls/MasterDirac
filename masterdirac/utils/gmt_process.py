@@ -1,4 +1,5 @@
 import os.path
+import copy
 import urllib2 as u2
 from BeautifulSoup import BeautifulSoup
 from boto.dynamodb2.fields import HashKey, RangeKey
@@ -6,7 +7,7 @@ from boto.dynamodb2.table import Table
 import types
 from boto.dynamodb2.table import Table
 from boto.exception import JSONResponseError
-def parseGMT( filename ):
+def parseGMT( filename, max_net = 100 ):
     """
     Parses a gmt file and returns a list of dicts
     """
@@ -19,7 +20,8 @@ def parseGMT( filename ):
             gene_ids = parsed[2:]
             d = {'src_id': os.path.split(filename)[1], 'pw_id' : pw_id, 'broad_url': url, 
                     'gene_ids':gene_ids}
-            gmt_list.append(d)
+            if len(gene_ids) < max_net:
+                gmt_list.append(d)
     return gmt_list
 
 def addBroadMeta( gmt ):
@@ -81,9 +83,8 @@ def createTable( tname, primary_key, secondary_key=None ):
 
 
 if __name__ == "__main__":
-    gmt_list = parseGMT('/home/sgeadmin/hdproject/data/c2.cp.biocarta.v4.0.symbols.gmt') 
-    for gmt in gmt_list:
-        addBroadMeta(gmt)
+    gmt_list = parseGMT('/home/sgeadmin/c2.cp.reactome.v4.0.symbols.gmt') 
+    ctr = 0
 
     mytable = createTable('net_info_table', 'src_id', 'pw_id')
     with mytable.batch_write() as batch:
