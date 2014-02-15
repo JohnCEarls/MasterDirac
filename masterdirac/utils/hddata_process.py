@@ -149,8 +149,6 @@ class HDDataGen:
                 net_gene_to_probes[net_gene] = probes.tolist()
         return net_gene_to_probes
 
-
-
     def _get_network_genes( self, network_table, source_key, region='us-east-1'):
         """
         Given a dynamodb table and a source_key (network set name)
@@ -169,7 +167,6 @@ class HDDataGen:
                 network_genes.add(gene)
         return network_genes
 
-
     def _get_annotations(self, annotations_file):
         return parsers.read_table( join( self.working_dir, annotations_file ) )
 
@@ -178,7 +175,6 @@ class HDDataGen:
         control_probes = annot['ProbeName'][annot['ControlType'] != 0]
         data = data.drop(control_probes)
         return data
-
 
     def write_to_s3( self, bucket_name, dataframe,  dataframe_name,
             location=Location.DEFAULT):
