@@ -166,16 +166,15 @@ class ServerManager:
         if serv.num_gpus > 1:
             inst_id = serv.instance_id
             if inst_id in self.gpu_ids:
-                if len(self.gpu_ids[inst_id]) >= serv.num_gpus:
-                    #we have too many gpus started
-                    raise Exception("need to add logic for handling"
-                            "gpu contention.")
-                else:
-                    if self.gpu_ids[inst_id][0] == 0:
-                        gpu_id = 1
-                    self.gpu_ids[inst_id].append(gpu_id)
-            else:
-                self.gpu_ids[inst_id] = [gpu_id]
+                self.logger.warning(("Adding gpu server to already running gpu"
+                    " instance-id[%s], current config %r") % 
+                    (inst_id, self.gpu_ids[inst_id]) )
+                #for now we just swap LRU
+                #DEBUG: need better logic here
+                self.logger.debug("***Revisit multigpu logic***")
+                if self.gpu_ids[inst_id][-1] == 0:
+                    gpu_id = 1
+            self.gpu_ids[inst_id] = [gpu_id]
         serv.send_init( self.aws_locations['gpu'], self.block_sizes,
                 self.data_settings, gpu_id=gpu_id,
                 heartbeat_interval=self.base_heartbeat )
