@@ -122,7 +122,7 @@ def run( data_sizes, config):
     manager.add_work( get_work(config, perm=True) )
     while True or manager.has_work():
         logger.debug("Starting work cycle")
-        manager.poll_for_server()
+        manager.poll_for_server(timeout=5)
         manager.send_run()
         manager.inspect()
         logger.debug("Ending work cycle")
