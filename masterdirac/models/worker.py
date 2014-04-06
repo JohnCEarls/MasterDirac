@@ -1,6 +1,7 @@
 from pynamodb.models import Model
 from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
-        NumberAttribute, UnicodeSetAttribute, JSONAttribute)
+        NumberAttribute, UnicodeSetAttribute, JSONAttribute, BooleanAttribute
+        )
 from pynamodb.exceptions import DoesNotExist
 from datetime import datetime
 
@@ -12,50 +13,39 @@ READY = 2
 TERMINATED = 3
 
 #worker defaults
-IAM_PROFILE=
 
 class ANWorker(Model):
     table_name='aurea-nebula-worker'
     master_name = UnicodeAttribute( hash_key=True )
     cluster_name = UnicodeAttribute( range_key=True )
     cluster_type = UnicodeAttribute(default='data')
-    date_created = UTCDateTimeAttribute( default=datetime.utcnow() ) 
+    date_created = UTCDateTimeAttribute( default=datetime.utcnow() )
     aws_region = UnicodeAttribute(default='')
     num_nodes = NumberAttribute(default=0)
     nodes = UnicodeSetAttribute(default=[])
     state = NumberAttribute(default=0)
-    starcluster_config = JSONAttribute(default={}) 
+    starcluster_config = JSONAttribute(default={})
     startup_log = UnicodeAttribute(default='')
     startup_pid = UnicodeAttribute(default='')
     key = UnicodeAttribute(default = '')
     logging_config = JSONAttribute( default={} )
     cluster_init_config = JSONAttribute( default={} )
 
+class ANWorkerBase(Model):
+    table_name = 'aurea-nebula-worker-base'
+    cluster_type = UnicodeAttribute( hash_key=True )
+    aws_region = UnicodeAttribute( range_key=True )
+    instance_type = UnicodeAttribute( default='' )
+    image_id = UnicodeAttribute( default='' )
+    cluster_size = NumberAttribute( default='' )
+    plugins = UnicodeSetAttribute( default=[] )
+    force_spot_master = BooleanAttribute( default=True )
+    spot_bid = NumberAttribute( default = 0.0 )
 
-def new_data_server( cluster_prefix, aws_region, server_type, spot_bid):
-
-class ANWorkerServer:
-    def __init__(self, master_name, cluster_name, 
-    
-
-        """= {                                                                  
-        'cluster_name':'dummy-cluster',                                         
-        'aws_region':'us-east-1',                                               
-        'key_name': 'somekey',                                                  
-        'key_location': '/home/sgeadmin/somekey.key',                           
-        'cluster_size': 1,                                                      
-        'node_instance_type': 'm1.xlarge',                                      
-        'node_image_id': 'ami-1234567',                                         
-        'iam_profile':'some-profile',                                           
-        'force_spot_master':True,                                               
-        'spot_bid':2.00,                                                        
-        'plugins':'p1,p2,p3'                                                    
-    }""" 
 if __name__ == "__main__":
     if not ANWorker.exists():
-        ANWorker.create_table( read_capacity_units=2, 
+        ANWorker.create_table( read_capacity_units=2,
             write_capacity_units=1, wait=True)
-
-
-
-
+    if not ANWorkerBase.exists():
+        ANWorkerBase.create_table( read_capacity_units=2,
+            write_capacity_units=1, wait=True)

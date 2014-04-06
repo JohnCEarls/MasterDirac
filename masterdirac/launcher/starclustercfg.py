@@ -45,9 +45,6 @@ class ANWorkerConfig(Model):
     startup_log = UnicodeAttribute(default='')
     startup_pid = UnicodeAttribute(default='')
 
-
-
-
 class ANDataServer(ANServer):
     def _create_model(self, master_name, cluster_name, aws_region):
         sc_model = ANWorkerConfig( master_name, cluster_name )
