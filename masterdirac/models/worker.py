@@ -36,11 +36,10 @@ class ANWorker(Model):
     cluster_init_config = JSONAttribute( default={} )
 
 def insert_ANWorker( master_name, cluster_name ):
-
     date = datetime.utcnow()
     key_base = master_name + cluster_name + date
     m = hashlib.md5()
-    m.update( key_base )#just a key, not meant to be secure or anything, just unique
+    m.update( key_base )#just a key, not meant to be secure, just unique
     key = m.hexdigest()
     item = ANWorker( key )
     item.master_name = master_name
@@ -87,9 +86,6 @@ def _get_ANWorker( worker_id ):
     except ANWorker.DoesNotExist as dne:
         return {}
 
-
-
-
 class ANWorkerBase(Model):
     class Meta:
         table_name = 'aurea-nebula-worker-base'
@@ -102,10 +98,19 @@ class ANWorkerBase(Model):
     plugins = UnicodeAttribute( default='' )
     force_spot_master = BooleanAttribute( default=True )
     spot_bid = NumberAttribute( default = 0.0 )
+    prefix = UnicodeAttribute( default='')
+    iam_profile = UnicodeAttribute( default='' )
 
-def insert_ANWorkerBase( cluster_type, aws_region, instance_type=None,
-        image_id=None, cluster_size=None, plugins=None,
-        force_spot_master=None, spot_bid=None):
+def insert_ANWorkerBase( cluster_type, aws_region, 
+        instance_type=None,
+        image_id=None, 
+        cluster_size=None, 
+        plugins=None,
+        force_spot_master=None, 
+        spot_bid=None, 
+        prefix=None,
+        iam_profile=None
+        ):
     item = ANWorkerBase( cluster_type, aws_region)
     if instance_type is not None:
         item.instance_type = instance_type
@@ -119,6 +124,10 @@ def insert_ANWorkerBase( cluster_type, aws_region, instance_type=None,
         item.force_spot_master = force_spot_master
     if spot_bid is not None:
         item.spot_bid = spot_bid
+    if prefix is not None:
+        item.prefix = prefix
+    if iam_profile is not None:
+        item.iam_profile = iam_profile 
     item.save()
 
 def update_ANWorkerBase( cluster_type, aws_region, instance_type=None,
@@ -137,6 +146,10 @@ def update_ANWorkerBase( cluster_type, aws_region, instance_type=None,
         item.force_spot_master = force_spot_master
     if spot_bid is not None:
         item.spot_bid = spot_bid
+    if prefix is not None:
+        item.prefix = prefix
+    if iam_profile is not None:
+        item.iam_profile = iam_profile 
     item.save()
 
 def delete_ANWorkerBase( cluster_type, aws_region ):
