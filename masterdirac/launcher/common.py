@@ -52,6 +52,7 @@ class ANMasterServer:
         return config
 
     def key_location( self ):
+        raise Exception("TODO: not implemented")
 
     @property
     def aws_region( self ):

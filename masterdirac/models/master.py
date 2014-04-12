@@ -23,7 +23,7 @@ def get_default_master():
     Returns empty list if default not found
     """
     return max( [item for item in ANMaster.scan(master_name__eq='default')], lambda x:x.date_created)
-    
+
 if __name__ == "__main__":
     if not ANMaster.exists():
         print "creaing aurea-nebula-master"

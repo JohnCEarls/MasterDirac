@@ -2,9 +2,8 @@ from pynamodb.models import Model
 from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
         NumberAttribute, UnicodeSetAttribute, JSONAttribute, BooleanAttribute
         )
-from pynamodb.exceptions import DoesNotExist
 from datetime import datetime
-
+import hashlib
 #STATES
 OFF = 0
 LAUNCHING = 0
@@ -20,8 +19,9 @@ class ANWorker(Model):
     class Meta:
         table_name='aurea-nebula-worker'
         region = 'us-east-1'
-    master_name = UnicodeAttribute( hash_key=True )
-    cluster_name = UnicodeAttribute( range_key=True )
+    worker_id = UnicodeAttribute( hash_key=True )
+    master_name = UnicodeAttribute( default='' )
+    cluster_name = UnicodeAttribute( default=''  )
     cluster_type = UnicodeAttribute(default='data')
     date_created = UTCDateTimeAttribute( default=datetime.utcnow() )
     aws_region = UnicodeAttribute(default='')
@@ -34,6 +34,61 @@ class ANWorker(Model):
     key = UnicodeAttribute(default = '')
     logging_config = JSONAttribute( default={} )
     cluster_init_config = JSONAttribute( default={} )
+
+def insert_ANWorker( master_name, cluster_name ):
+
+    date = datetime.utcnow()
+    key_base = master_name + cluster_name + date
+    m = hashlib.md5()
+    m.update( key_base )#just a key, not meant to be secure or anything, just unique
+    key = m.hexdigest()
+    item = ANWorker( key )
+    item.master_name = master_name
+    item.cluster_name = cluster_name
+    item.date_created = date_created
+
+
+def get_ANWorker( worker_id=None, master_name=None, cluster_name=None ):
+    """
+    If a worker_id is given, this returns a single Worker,
+        otherwise a list of matching workers is returned
+    """
+    def to_dict( item ):
+        """
+        Convert workerbase to dictionary
+        """
+        result = {}
+        result['cluster_type'] = item.cluster_type
+        result['aws_region'] = item.aws_region
+        for key, value in item.attribute_values.iteritems():
+            result[key] = value
+        return result
+    if worker_id is not None:
+        return _get_ANWorker( worker_id )
+    else:
+        results = []
+        scan_fltr = {}
+        if cluster_name is not None:
+            scan_fltr['cluster_name__eq'] = cluster_name
+        if master_name is not None:
+            scan_fltr['master_name__eq'] = master_name
+        for item in ANWorkerBase.scan(**scan_fltr):
+            results.append( to_dict( item ) )
+        return results
+
+
+def _get_ANWorker( worker_id ):
+    """
+    Gets full record
+    """
+    try:
+        item = ANWorker.get( worker_id )
+        return to_dict( item )
+    except ANWorker.DoesNotExist as dne:
+        return {}
+
+
+
 
 class ANWorkerBase(Model):
     class Meta:
