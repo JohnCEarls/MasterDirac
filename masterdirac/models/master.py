@@ -1,7 +1,6 @@
 from pynamodb.models import Model
 from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
         NumberAttribute, UnicodeSetAttribute, JSONAttribute)
-from pynamodb.exceptions import DoesNotExist
 from datetime import datetime
 
 class ANMaster(Model):

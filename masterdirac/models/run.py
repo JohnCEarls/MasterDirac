@@ -23,6 +23,7 @@ def insert_ANRun( run_id, master_name=None, workers=None, source_data=None,
         intercomm_settings=None, aggregator_settings=None):
     item = ANRun( run_id )
     if master_name is not None:
+        raise Exception("Run is not implemented")
 
 
 if __name__ == "__main__":
