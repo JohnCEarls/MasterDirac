@@ -171,25 +171,20 @@ class S3TimedRotatatingFileHandler(TimedRotatingFileHandler):
         k.set_contents_from_filename(filename, reduced_redundancy=True)
 
 def startLogger():
-    import argparse
-    import ConfigParser
     import os, os.path
     import logging
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', help='Configfile name', required=True)
-    args = parser.parse_args()
-    config = ConfigParser.RawConfigParser()
-    config.read(args.config)
-    log_dir = config.get('base', 'directory')
-    LOG_FILENAME = config.get('base', 'log_filename')
+    import masterdirac.models.systemdefaults as sys_def
+    config =  sys_def.get_system_defaults('loggingserver', 'Master')
+    log_dir = config['directory']
+    LOG_FILENAME = config[ 'log_filename' ]
     if LOG_FILENAME == 'None':
         md =  boto.utils.get_instance_metadata()
         LOG_FILENAME = md['instance-id'] + '.log'
-    bucket = config.get('base', 'bucket')
-    interval_type = config.get('base', 'interval_type')
-    interval = int(config.get('base', 'interval'))
-    log_format = config.get('base', 'log_format')
-    port = config.get('base', 'port')
+    bucket = config[ 'bucket']
+    interval_type = config[ 'interval_type' ]
+    interval = int(config['interval'])
+    log_format = config['log_format']
+    port = config[ 'port' ]
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     handler = S3TimedRotatatingFileHandler(os.path.join(log_dir,LOG_FILENAME),
@@ -205,24 +200,20 @@ def startLogger():
         sys.exit(0)
 
 
-def initLogging(configfile):
-    import ConfigParser
-    import logging
-    import os, os.path
-    config = ConfigParser.RawConfigParser()
-    config.read(configfile)
+def initLogging():
+    import masterdirac.models.systemdefaults as sys_def
+    config =  sys_def.get_system_defaults('logging', 'Master')
+    log_format = config['log_format']
+    es_name = config[ 'external_server_name']
+    es_port = config[ 'external_server_port']
+    es_level = int(config[ 'external_server_level' ])
 
-    log_format = config.get('logging', 'log_format')
-    es_name = config.get('logging', 'external_server_name')
-    es_port = config.get('logging', 'external_server_port')
-    es_level = int(config.get('logging', 'external_server_level'))
+    is_name = config[ 'internal_server_name']
+    is_port = config['internal_server_port']
+    is_level = config['internal_server_level']
 
-    is_name = config.get('logging', 'internal_server_name')
-    is_port = config.get('logging', 'internal_server_port')
-    is_level = config.get('logging', 'internal_server_level')
-
-    boto_level = config.get('logging', 'boto_level')
-    stdout_level =config.get('logging', 'stdout_level')
+    boto_level = config[ 'boto_level']
+    stdout_level =config[ 'stdout_level']
 
     botoLogger = logging.getLogger('boto')
     botoLogger.setLevel(int(boto_level))

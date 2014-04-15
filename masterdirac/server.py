@@ -14,24 +14,26 @@ import string
 from boto.dynamodb2.table import Table
 import datetime
 from boto.dynamodb2.items import Item
-def init_data( config ):
+def init_data( run_config ):
     """
     Grabs data sources from s3, creates the dataframe needed
     by the system and moves it to another s3 bucket
     """
+    import masterdirac.models.systemdefaults as sys_def
+    local_config =  sys_def.get_system_defaults('local_settings', 'Master')
     args = ( config.get('source_data', 'bucket'),
             config.get('source_data', 'data_file'),
             config.get('source_data', 'meta_file'),
             config.get('source_data', 'annotations_file'),
             config.get('source_data', 'synonym_file'),
             config.get('source_data', 'agilent_file'),
-            config.get('local_settings', 'working_dir') )
+            local_config['working_dir'] )
     logger = logging.getLogger('DataInit')
     logger.info("Getting source data")
 
     hddata_process.get_from_s3( *args)
     logger.info("Generating dataframe")
-    hddg = hddata_process.HDDataGen(config.get('local_settings','working_dir'))
+    hddg = hddata_process.HDDataGen( local_config['working_dir'] )
     df,net_est = hddg.generate_dataframe( config.get('source_data', 'data_file'),
                                 config.get('source_data', 'annotations_file'),
                                 config.get('source_data', 'agilent_file'),
@@ -99,8 +101,10 @@ def get_work( config, perm=True ):
     (strain, num_runs, shuffle, k)
     Going to have to modify the data size part if allowing k to float
     """
+    import masterdirac.models.systemdefaults as sys_def
+    local_config =  sys_def.get_system_defaults('local_settings', 'Master')
     md = datadirac.data.MetaInfo( os.path.join(
-        config.get('local_settings', 'working_dir'),
+        local_config[ 'working_dir' ],
         config.get('source_data', 'meta_file') ) )
     p = config.getint('run_settings', 'permutations')
     k = config.getint('run_settings', 'k')
@@ -130,18 +134,11 @@ def run( data_sizes, config):
     logger.info("Exiting run")
 
 def main():
-    import argparse
-    import ConfigParser 
     from masterdirac.utils import debug
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', help='Configfile name', required=True)
-    args = parser.parse_args()
     name = 'MasterServer'
-    debug.initLogging( args.config )
+    debug.initLogging()
     logger = logging.getLogger(name)
-    logger.info("Getting config[%s]" % args.config)
     config = ConfigParser.ConfigParser()
-    config.read( args.config )
     init_infrastructure( config )
     data_sizes = init_data( config )
     run( data_sizes, config)
