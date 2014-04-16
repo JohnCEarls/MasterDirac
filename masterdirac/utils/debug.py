@@ -215,12 +215,16 @@ def initLogging():
     boto_level = config[ 'boto_level']
     stdout_level =config[ 'stdout_level']
 
-    botoLogger = logging.getLogger('boto')
-    botoLogger.setLevel(int(boto_level))
-
     formatter = logging.Formatter(log_format)
     rootLogger = logging.getLogger('')
     rootLogger.setLevel(logging.DEBUG)
+    botoLogger = logging.getLogger('boto')
+    botoLogger.setLevel(int(boto_level))
+    botoLogger = logging.getLogger('botocore')
+    botoLogger.setLevel(int(boto_level))
+    botoLogger = logging.getLogger('pynamodb')
+    botoLogger.setLevel(int(boto_level))
+
 
     if es_name !='None':
         print "In external server", es_level

@@ -71,7 +71,7 @@ def get_ANWorker( worker_id=None, master_name=None, cluster_name=None ):
             scan_fltr['cluster_name__eq'] = cluster_name
         if master_name is not None:
             scan_fltr['master_name__eq'] = master_name
-        for item in ANWorkerBase.scan(**scan_fltr):
+        for item in ANWorker.scan(**scan_fltr):
             results.append( to_dict( item ) )
         return results
 

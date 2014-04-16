@@ -20,7 +20,6 @@ def get_system_defaults( setting_name = None, component=None ):
     if component is not None:
         scan_fltr['component__eq'] = component
 
-
     if setting_name is None or component is None:
         results = []
         for item in ANSystemDefaults.scan(**scan_fltr):
@@ -68,7 +67,9 @@ def set_system_defaults():
     ################
 
     item = ANSystemDefaults('local_settings', 'Master')
-    item.settings = {'working_dir': '/scratch/sgeadmin/master'}
+    item.settings = {'working_dir': '/scratch/sgeadmin/master',
+            'init-queue':'tcdirac-master'
+            }
     item.save()
 
     item = ANSystemDefaults('logging', 'Master')

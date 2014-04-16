@@ -74,7 +74,7 @@ class ServerManager:
     """
     Manages and Initializes GPU and Data Servers
     """
-    def __init__(self, data_sizes, config):
+    def __init__(self, data_sizes, master_model, run_model):
         self.logger = logging.getLogger("ServerManager")
         #mainly to keep track of instance variables
         #these are set in following methods
@@ -88,11 +88,13 @@ class ServerManager:
         self.data_servers = {}
         self.aws_locations = {}
         self.gpu_ids = {}
+        self._master_model = master_model
+        self._run_model = run_model
         #now we actually set all of these variables
         self.logger.debug("Loading Configs")
-        self._load_config(config)
-        self._configure_data(config)
-        self._configure_gpu(config, data_sizes)
+        self._load_config()
+        self._configure_data()
+        self._configure_gpu(data_sizes)
         assert self._gpu_mem_req < self.get_mem_max, "Not enough memory on gpu"
         self.logger.debug("exit __init__")
 
@@ -120,7 +122,7 @@ class ServerManager:
         Sends chunks of work from the work queue
         to available data clusters
         """
-        chunksize = 10000
+        chunksize = self._run_model['run_settings']['chunksize'] 
         if len(self.data_servers):
             for k,server in self.data_servers.iteritems():
                 if len(self.work) and not server.busy():
@@ -140,6 +142,7 @@ class ServerManager:
         """
         TODO: load balancing, check for problems, etc
         Currently just grabs messages and puts them in deque
+        returns whether to shutdown server
         """
         for k,server in self.data_servers.iteritems():
             if server.get_responses():
@@ -147,6 +150,8 @@ class ServerManager:
         for k,server in self.gpu_servers.iteritems():
             if server.get_responses():
                 self.logger.info("%s(gpu server): has response" % k)
+
+        return False
 
     def _handle_server_init( self, message ):
         self.logger.debug("Handling message %s" % json.dumps( message ) )
@@ -210,55 +215,60 @@ class ServerManager:
         return iq
 
 
-    def _load_config(self, config ):
+    def _load_config(self ):
         """
         Loads run specific settings from config file
         """
-        self._init_q = config.get( 'run_settings','server_initialization_queue') 
+        run_settings = self._run_model['run_settings']
+        self._init_q = run_settings['server_initialization_queue']
         self.block_sizes = (
-                config.getint('run_settings', 'sample_block_size'),
-                config.getint('run_settings', 'pairs_block_size'),
-                config.getint('run_settings', 'nets_block_size') )
-        self.k = config.getint('run_settings', 'k')
-        self.base_heartbeat = config.getint('run_settings','heartbeat_interval')
+                run_settings[ 'sample_block_size'],
+                run_settings[ 'pairs_block_size'],
+                run_settings[ 'nets_block_size'] )
+        self.k = run_settings[ 'k']
+        self.base_heartbeat = run_settings['heartbeat_interval']
 
-    def _configure_data(self, config ):
+    def _configure_data(self):
         self.logger.info( "Configuring data server settings" )
-        self._configure_data_aws_locations( config )
-        self._configure_data_source_files( config )
-        self._configure_data_network_settings( config )
+        self._configure_data_aws_locations()
+        self._configure_data_source_files()
+        self._configure_data_network_settings()
 
-    def _configure_gpu( self, config, data_sizes):
+    def _configure_gpu( self, data_sizes):
         self.logger.info( "Configuring gpu server settings" )
-        self._configure_gpu_aws_locations( config )
+        self._configure_gpu_aws_locations( )
         self._configure_gpu_data_settings( data_sizes )
 
-    def _configure_data_aws_locations(self, config):
+    def _configure_data_aws_locations(self):
+        intercomm_settings = self._run_model['intercomm_settings']
         self.aws_locations['data'] = (
-                config.get( 'intercomm_settings', 'sqs_from_data_to_agg' ),
-                config.get( 'intercomm_settings', 'sqs_from_data_to_agg_truth'),
-                config.get( 'intercomm_settings', 'sqs_from_data_to_gpu' ),
-                config.get( 'intercomm_settings', 's3_from_data_to_gpu') )
+                intercomm_settings[ 'sqs_from_data_to_agg' ],
+                intercomm_settings[ 'sqs_from_data_to_agg_truth'],
+                intercomm_settings[ 'sqs_from_data_to_gpu' ],
+                intercomm_settings[ 's3_from_data_to_gpu'] )
 
-    def _configure_data_source_files( self, config):
+    def _configure_data_source_files( self ):
+        dest_data = self._run_model['dest_data']
         self.source_files = ( 
-                config.get( 'dest_data', 'working_bucket' ),
-                config.get( 'dest_data', 'dataframe_file' ),
-                config.get( 'dest_data', 'meta_file' ) )
+                dest_data[ 'working_bucket' ],
+                dest_data[ 'dataframe_file' ],
+                dest_data[ 'meta_file' ] )
 
-    def _configure_data_network_settings( self, config ):
+    def _configure_data_network_settings( self ):
+        network_config = self._run_model['network_config']
         self.network_settings = (
-                config.get( 'network_config', 'network_table' ),
-                config.get( 'network_config', 'network_source')
+                network_config[ 'network_table' ],
+                network_config[ 'network_source']
                 )
 
 
-    def _configure_gpu_aws_locations( self, config):
+    def _configure_gpu_aws_locations( self ):
+        intercomm_settings = self._run_model['intercomm_settings']
         self.aws_locations['gpu'] = ( 
-                config.get( 'intercomm_settings', 'sqs_from_data_to_gpu'),
-                config.get( 'intercomm_settings', 'sqs_from_gpu_to_agg'),
-                config.get( 'intercomm_settings', 's3_from_data_to_gpu'),
-                config.get( 'intercomm_settings', 's3_from_gpu_to_agg') )
+                intercomm_settings[ 'sqs_from_data_to_gpu' ],
+                intercomm_settings[ 'sqs_from_gpu_to_agg' ],
+                intercomm_settings[ 's3_from_data_to_gpu' ],
+                intercomm_settings[ 's3_from_gpu_to_agg' ] )
 
     def _configure_gpu_data_settings(self, data_sizes):
         """
@@ -269,7 +279,7 @@ class ServerManager:
 
     def _set_data_ub(self, k, data_sizes, block_sizes ):
         """
-        Get an upper bound on the size of data structures
+        Get an upper bound on the size of data structure s
         Returns max_bytes for  em, sm, gm, nm, rms, total
         TODO:make this more accurate
         """
