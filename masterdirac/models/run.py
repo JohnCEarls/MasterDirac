@@ -81,7 +81,7 @@ def get_ANRun( run_id=None ):
     if run_id is not None:
         result = {}
         try:
-            item = ANRun( run_id )
+            item = ANRun.get( run_id )
             return to_dict( item )
         except ANRun.DoesNotExist as dne:
             return {}
@@ -91,6 +91,10 @@ def get_ANRun( run_id=None ):
             results.append( to_dict( item ) )
         return results
 
+def delete_ANRun( run_id ):
+    item = ANRun.get( run_id )
+    item.delete()
+
 if __name__ == "__main__":
     if not ANRun.exists():
         ANRun.create_table( read_capacity_units=2, write_capacity_units=1,
@@ -99,7 +103,7 @@ if __name__ == "__main__":
     default_source_data = {
             'bucket':'hd_source_data',
             'data_file':'exp_mat_b6_wt_q111.txt',
-            'meta_file':' metadata_b6_wt_q111.txt',
+            'meta_file':'metadata_b6_wt_q111.txt',
             'annotations_file':'annodata_b6.txt',
             'agilent_file':'HDLux_agilent_gene_list.txt',
             'synonym_file':'Mus_homo.gene_info'
@@ -141,6 +145,7 @@ if __name__ == "__main__":
 
     insert_ANRun( 'default', 
             source_data = default_source_data,
+            dest_data = default_dest_data,
             network_config= default_network_config,
             run_settings = default_run_settings,
             intercomm_settings = default_intercomm_settings,
