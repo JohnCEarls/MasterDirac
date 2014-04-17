@@ -73,7 +73,7 @@ def to_dict( run_item ):
     result['run_settings'] = run_item.run_settings
     result['intercomm_settings'] = run_item.intercomm_settings
     result['aggregator_settings'] = run_item.aggregator_settings
-    result['data_created'] = run_item.date_created
+    result['date_created'] = run_item.date_created
     result['status'] = run_item.status
     return result
 
