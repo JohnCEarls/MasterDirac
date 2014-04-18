@@ -186,16 +186,15 @@ def get_run( master_model ):
     logger.debug("Looking for current run")
     master_name = master_model['master_name'] 
     for item in run.ANRun.scan():
-        if item.status >= run.COMPLETE:
-            continue
-        this_run = run.to_dict( item )
-        if (this_run['status'] == run.INIT 
-        or this_run.master_name == master_name):
-            if not this_run['master_name']:
-                this_run = run.insert_ANRun( this_run['run_id'],
-                        master_name=master_name)
-            logger.info( "Found run %r" % this_run )
-            return this_run
+        if item.status in [run.INIT, run.ACTIVE]:
+            this_run = run.to_dict( item )
+            if (this_run['status'] == run.INIT 
+            or this_run.master_name == master_name):
+                if not this_run['master_name']:
+                    this_run = run.insert_ANRun( this_run['run_id'],
+                            master_name=master_name)
+                logger.info( "Found run %r" % this_run )
+                return this_run
     logger.info("No run found")
     return None
 

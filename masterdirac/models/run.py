@@ -4,6 +4,7 @@ from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
 from datetime import datetime
 
 #STATUS_CODES
+CONFIG = -10
 INIT = 0
 ACTIVE = 10
 COMPLETE = 20
@@ -24,7 +25,7 @@ class ANRun(Model):
     intercomm_settings = JSONAttribute( default={} )
     aggregator_settings = JSONAttribute( default={} )
     date_created = UTCDateTimeAttribute( default = datetime.utcnow() )
-    status = NumberAttribute(default=0)
+    status = NumberAttribute(default=CONFIG)
 
 def insert_ANRun( run_id, 
         master_name=None, 
