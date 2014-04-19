@@ -33,6 +33,14 @@ def to_dict( master_item ):
     result['status'] = master_item.status
     return result
 
+def get_active_master( ):
+    masters = get_master()
+    for master in masters:
+        if master['status'] in [INIT, RUN]:
+            return master
+    return None
+
+
 def get_master( master_name=None):
     if master_name is None:
         results = []
