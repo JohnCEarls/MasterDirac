@@ -4,6 +4,7 @@ from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
 from datetime import datetime
 
 #STATES
+NA = -10
 INIT = 0
 RUN = 10
 TERMINATED = 30

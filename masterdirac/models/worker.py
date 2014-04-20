@@ -5,11 +5,12 @@ from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
 from datetime import datetime
 import hashlib
 #STATES
-OFF = 0
-LAUNCHING = 0
-UNINITIALIZED = 1
-READY = 2
-TERMINATED = 3
+NA = -10
+CONFIG = 0
+STARTING = 10
+READY = 20
+RUNNING = 30
+TERMINATED = 40
 
 #worker defaults
 
@@ -27,30 +28,120 @@ class ANWorker(Model):
     aws_region = UnicodeAttribute(default='')
     num_nodes = NumberAttribute(default=0)
     nodes = UnicodeSetAttribute(default=[])
-    state = NumberAttribute(default=0)
+    status = NumberAttribute(default=0)
     starcluster_config = JSONAttribute(default={})
     startup_log = UnicodeAttribute(default='')
     startup_pid = UnicodeAttribute(default='')
     key = UnicodeAttribute(default = '')
-    logging_config = JSONAttribute( default={} )
-    cluster_init_config = JSONAttribute( default={} )
 
-def insert_ANWorker( master_name, cluster_name ):
-    date = datetime.utcnow()
-    key_base = master_name + cluster_name + date
+
+def to_dict_ANW( item ):
+    """
+    Convert workerbase to dictionary
+    """
+    result = {}
+    for key, value in item.attribute_values.iteritems():
+        result[key] = value
+    return result
+
+def insert_ANWorker( master_name, cluster_name,
+            cluster_type,
+            aws_region,
+            num_nodes = None,
+            status = None,
+            starcluster_config = None,
+            startup_log = None,
+            startup_pid = None,
+            key = None,
+        ):
+    date = datetime.utcnow().isoformat()
+    key_base = '-'.join([master_name, cluster_name,cluster_type, aws_region, date])
     m = hashlib.md5()
     m.update( key_base )#just a key, not meant to be secure, just unique
     key = m.hexdigest()
+    print key
     item = ANWorker( key )
     item.master_name = master_name
     item.cluster_name = cluster_name
-    item.date_created = date_created
+    item.cluster_type = cluster_type
+    item.aws_region = aws_region
 
+    if num_nodes is not None:
+        item.num_nodes = num_nodes
+    if status is not None:
+        item.status = status
+    if starcluster_config is not None:
+        item.starcluster_config = starcluster_config
+    if startup_log is not None:
+        item.startup_log = startup_log
+    if startup_pid is not None:
+        item.startup_pid = startup_pid
+    if key is not None:
+        item.key = key
+    item.save()
+    return to_dict_ANW(item)
+
+def update_ANWorker( worker_id,
+            num_nodes = None,
+            nodes = None,
+            status = None,
+            starcluster_config = None,
+            startup_log = None,
+            startup_pid = None,
+            key = None,
+        ):
+    item = ANWorker.get( worker_id )
+
+    if num_nodes is not None:
+        item.num_nodes = num_nodes
+    if status is not None:
+        item.status = status
+    if starcluster_config is not None:
+        item.starcluster_config = starcluster_config
+    if startup_log is not None:
+        item.startup_log = startup_log
+    if startup_pid is not None:
+        item.startup_pid = startup_pid
+    if key is not None:
+        item.key = key
+    if nodes is not None:
+        item.nodes = nodes
+    item.save()
+    return to_dict_ANW( item )
 
 def get_ANWorker( worker_id=None, master_name=None, cluster_name=None ):
     """
     If a worker_id is given, this returns a single Worker,
         otherwise a list of matching workers is returned
+    """
+    if worker_id is not None:
+        return _get_ANWorker( worker_id )
+    else:
+        results = []
+        for item in ANWorker.scan():#pynamo screwed up scan
+            #TODO: fix pynamo or wait for fix
+            if master_name is not None and item.master_name != master_name:
+                continue
+            if cluster_name is not None and item.cluster_name != cluster_name:
+                continue
+            results.append( to_dict_ANW( item ) )
+        return results
+
+def get_active_workers():
+    """
+    Returns workers that may be operated on (i.e. have not been used)
+    """
+    results = []
+    for item in ANWorker.scan():
+        if item.status in [CONFIG, STARTING, READY, RUNNING]:
+            results.append( to_dict_ANW( item ) )
+    results.sort( key=lambda x: (x['cluster_type'], x['aws_region'], x['status']) )
+    return results
+
+
+def _get_ANWorker( worker_id ):
+    """
+    Gets full record
     """
     def to_dict( item ):
         """
@@ -62,24 +153,6 @@ def get_ANWorker( worker_id=None, master_name=None, cluster_name=None ):
         for key, value in item.attribute_values.iteritems():
             result[key] = value
         return result
-    if worker_id is not None:
-        return _get_ANWorker( worker_id )
-    else:
-        results = []
-        scan_fltr = {}
-        if cluster_name is not None:
-            scan_fltr['cluster_name__eq'] = cluster_name
-        if master_name is not None:
-            scan_fltr['master_name__eq'] = master_name
-        for item in ANWorker.scan(**scan_fltr):
-            results.append( to_dict( item ) )
-        return results
-
-
-def _get_ANWorker( worker_id ):
-    """
-    Gets full record
-    """
     try:
         item = ANWorker.get( worker_id )
         return to_dict( item )
@@ -101,13 +174,13 @@ class ANWorkerBase(Model):
     prefix = UnicodeAttribute( default='')
     iam_profile = UnicodeAttribute( default='' )
 
-def insert_ANWorkerBase( cluster_type, aws_region, 
+def insert_ANWorkerBase( cluster_type, aws_region,
         instance_type=None,
-        image_id=None, 
-        cluster_size=None, 
+        image_id=None,
+        cluster_size=None,
         plugins=None,
-        force_spot_master=None, 
-        spot_bid=None, 
+        force_spot_master=None,
+        spot_bid=None,
         prefix=None,
         iam_profile=None
         ):
@@ -127,7 +200,7 @@ def insert_ANWorkerBase( cluster_type, aws_region,
     if prefix is not None:
         item.prefix = prefix
     if iam_profile is not None:
-        item.iam_profile = iam_profile 
+        item.iam_profile = iam_profile
     item.save()
 
 def update_ANWorkerBase( cluster_type, aws_region, instance_type=None,
@@ -149,7 +222,7 @@ def update_ANWorkerBase( cluster_type, aws_region, instance_type=None,
     if prefix is not None:
         item.prefix = prefix
     if iam_profile is not None:
-        item.iam_profile = iam_profile 
+        item.iam_profile = iam_profile
     item.save()
 
 def delete_ANWorkerBase( cluster_type, aws_region ):
@@ -200,4 +273,27 @@ if __name__ == "__main__":
     if not ANWorkerBase.exists():
         ANWorkerBase.create_table( read_capacity_units=2,
             write_capacity_units=1, wait=True)
-    insert_ANWorkerBase( cluster_type='test', aws_region='test')
+    #insert_ANWorkerBase( cluster_type='test', aws_region='test')
+    test_data = {'master_name' : 'test-master',
+            'cluster_name' : 'test-data-0',
+            'cluster_type' : 'Data Cluster',
+            'aws_region' : 'us-east-1',
+            'num_nodes' : 10,
+            'starcluster_config' :{
+                'cluster_name':'dummy-cluster',
+                'aws_region':'us-east-1',
+                'key_name': 'somekey',
+                'key_location': '/home/sgeadmin/somekey.key',
+                'cluster_size': 1,
+                'node_instance_type': 'm1.xlarge',
+                'node_image_id': 'ami-1234567',
+                'iam_profile':'some-profile',
+                'force_spot_master':True,
+                'spot_bid':2.00,
+                'plugins':'p1,p2,p3'
+            },
+            'startup_log': 'somelog',
+            'key': 'somekey',
+            'status': CONFIG,
+            }
+    insert_ANWorker( **test_data )
