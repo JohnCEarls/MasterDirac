@@ -89,6 +89,7 @@ def set_system_defaults():
             'launcher_sqs_out':'aurea-nebula-launcher-out',
             'starcluster_bin' : '/home/sgeadmin/.local/bin/starcluster',
             'sc_config_url' : 'https://aurea-nebula.adversary.us/cm/config',
+            'startup_logging_queue': 'sc-logging-queue',
             'key_location':'/home/sgeadmin'}
     item.save()
 

@@ -58,9 +58,8 @@ def insert_ANWorker( master_name, cluster_name,
     key_base = '-'.join([master_name, cluster_name,cluster_type, aws_region, date])
     m = hashlib.md5()
     m.update( key_base )#just a key, not meant to be secure, just unique
-    key = m.hexdigest()
-    print key
-    item = ANWorker( key )
+    worker_id = m.hexdigest()
+    item = ANWorker( worker_id )
     item.master_name = master_name
     item.cluster_name = cluster_name
     item.cluster_type = cluster_type
@@ -80,6 +79,8 @@ def insert_ANWorker( master_name, cluster_name,
         item.key = key
     item.save()
     return to_dict_ANW(item)
+
+
 
 def update_ANWorker( worker_id,
             num_nodes = None,

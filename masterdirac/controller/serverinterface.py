@@ -11,7 +11,10 @@ import time
 import boto.ec2
 from datetime import datetime
 import select
-
+import masterdirac.models.master as mstr_mdl
+import masterdirac.models.worker as wkr_mdl
+import masterdirac.models.systemdefaults as sys_def_mdl
+import os
 class ServerInterface(object):
     def __init__(self, init_message):
         self.name = init_message['name']
@@ -90,8 +93,11 @@ class ServerManager:
         self.data_servers = {}
         self.aws_locations = {}
         self.gpu_ids = {}
+        self.cluster_startup_processes = []
         self._master_model = master_model
         self._run_model = run_model
+        self._launcher_model = sys_def_mdl.get_system_defaults( 
+                setting_name = 'launcher_config', component='Master' )
         #now we actually set all of these variables
         self.logger.debug("Loading Configs")
         self._load_config()
@@ -99,6 +105,7 @@ class ServerManager:
         self._configure_gpu(data_sizes)
         assert self._gpu_mem_req < self.get_mem_max, "Not enough memory on gpu"
         self.logger.debug("exit __init__")
+
 
     def add_work( self, work):
         for job in work:
@@ -124,7 +131,7 @@ class ServerManager:
         Sends chunks of work from the work queue
         to available data clusters
         """
-        chunksize = self._run_model['run_settings']['chunksize'] 
+        chunksize = self._run_model['run_settings']['chunksize']
         if len(self.data_servers):
             for k,server in self.data_servers.iteritems():
                 if len(self.work) and not server.busy():
@@ -152,6 +159,7 @@ class ServerManager:
         for k,server in self.gpu_servers.iteritems():
             if server.get_responses():
                 self.logger.info("%s(gpu server): has response" % k)
+        self.poll_launcher()
 
         return False
 
@@ -167,14 +175,117 @@ class ServerManager:
             self.logger.error("Init. Message: %s" %  json.dumps( message ) )
             raise Exception("No initialization found in initialization message")
 
+    def launch_cluster(self, worker_id ):
+        """
+        Given a worker id, prepare environment and start cluster.
+        """
+        worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+        if worker_model.status != wkr_mdl.CONFIG:
+            self.logger.error(( 'Attempted to startup [%s]' 
+                ' and status is wrong [%r]') % (worker_id, worker_model))
+            raise Exception(('Attempted to startup [%s] and' 
+                ' it is not in a CONFIG stat') % (worker_id) )
+        key_name, key_path = self._prep_launch_region( 
+                worker_model['aws_region'] )
+        worker_model['starcluster_config']['key_name'] = key_name
+        worker_model['starcluster_config']['key_location'] = key_path
+        self.logger.info("Updating worker[%s] key information" % worker_id)
+        wkr_mdl.update_ANWorker( worker_id,
+                starcluster_config = worker_model['starcluster_config'] )
+        startup_process = multiprocessing.Process( target = run_sc, 
+                args=( worker_id, ), 
+                name=worker_id)
+        startup_process.start()
+        self.logger.info( 'started startup process for [%s]' % (worker_id,) )
+        self.cluster_startup_processes.append( startup_process )
+
+    def poll_launcher( self ):
+        messages = self.launcher_q_in.get_messages( wait_time_seconds = timeout )
+        for mess in messages:
+            launch_mess = json.loads( mess.get_body() )
+            self.init_q.delete_message( mess )
+            self._handle_launcher( launch_mess )
+
+    def _handle_launcher( self, launch_mess):
+        if launch_mess['
+        #TODO: handle launch message
+ 
+    def _prep_launch_region( self, region ):
+        """
+        Returns ( key_name, key_path )
+        """
+        if region in self._master_model['key_pairs']:
+            key_name = self._master_model['key_pairs'][region]
+            sys_d = self._launcher_model
+            key_location = os.path.join( sys_d['key_location'], 
+                    self._get_key_file_name( key_name ) )
+            if os.path.exists( key_location ):
+                return ( key_name, key_location )
+            else:
+                E_MESS = "Key [%s] is not at [%s]" % (
+                    key_name, key_location )
+                self.logger.error( E_MESS )
+                raise Exception( E_MESS )
+                #this is unrecoverable because we have a key
+                #registered that may be being used,
+                #but can't find it.
+        else:
+            return self._gen_key( region )
+
+
+
+    def _gen_key( self, aws_region ):
+        ec2 = boto.ec2.connect_to_region( aws_region )
+        k_file = self._get_key_file_name( key_name )
+        sys_d = self._launcher_model
+        key_path = os.path.join( sys_d['key_location'], k_file )
+        if os.path.isfile( key_path ) and ec2.get_key_pair( key_name ):
+            #we have a key and key_pair
+            return ( key_name, key_path )
+        elif os.path.isfile( key_path ):
+            #we have a key and no key pair
+            os.remove( key_path )
+        elif ec2.get_key_pair( key_name ):
+            #we have a key_pair, but no key
+            ec2.delete_key_pair( key_name )
+        self.logger.info('Generating key [%s] at [%s] for [%s]' % (
+           key_name, key_path, aws_region ) )
+        key = ec2.create_key_pair( key_name )
+        key.save( sys_d['key_location'] )
+        os.chmod( key_path, 0600 )
+        self._master_model['key_pairs'][aws_region] = key_name
+        self.logger.info("Updating master model")
+        mstr_mdl.insert_master( self._master_model['master_name'], 
+                key_pairs = self._model['key_pairs'])
+        
+        return ( key_name, key_path )
+
+    def _gen_key_name( self, aws_region):
+        """
+        Given region, generate a key name specific to this master
+        """
+        key_name = 'sc-key-%s-%s' % (self._master_model['master_name'], aws_region )
+        return key_name
+
+    def _get_key_file_name( self, key_name):
+        """
+        Given key name, return key file name
+        """
+        #just a centralized place to pull this
+        return "%s.pem" % key_name
+
+
     def _handle_gpu_init( self, message):
+        """
+        Manage gpu server startup.
+        """
         serv = gpu.Interface( message )
         gpu_id = 0
         if serv.num_gpus > 1:
             inst_id = serv.instance_id
             if inst_id in self.gpu_ids:
                 self.logger.warning(("Adding gpu server to already running gpu"
-                    " instance-id[%s], current config %r") % 
+                    " instance-id[%s], current config %r") %
                     (inst_id, self.gpu_ids[inst_id]) )
                 #for now we just swap LRU
                 #DEBUG: need better logic here
@@ -189,14 +300,14 @@ class ServerManager:
 
     def _handle_data_init( self, message):
         serv = data.Interface( message )
-        serv.send_init( self.aws_locations['data'], self.source_files, 
+        serv.send_init( self.aws_locations['data'], self.source_files,
                 self.network_settings, self.block_sizes, self.get_mem_max() )
         self.data_servers[serv._unique] = serv
 
     def get_mem_max(self):
         """
         Return the maximum memory of a gpu,
-        This should be handled by master server, and I need to 
+        This should be handled by master server, and I need to
         remove the functionality from data servers ... but not today
         """
         return 2*1024*1024*1024
@@ -212,10 +323,34 @@ class ServerManager:
         while not iq:
             time.sleep(max(ctr,60))
             self.logger.warning("Creating Server Initialization Queue")
-            iq = conn.create_queue( self.init_q )
+            iq = conn.create_queue( self._init_q )
             ctr = 1.25 *ctr + 1
         return iq
 
+    @property
+    def launcher_q_in(self):
+        conn = boto.sqs.connect_to_region('us-east-1')
+        lq = conn.create_queue( self._launcher_model['launcher_sqs_in'] )
+        ctr = 0
+        while not lq:
+            time.sleep(max(ctr,60))
+            self.logger.warning("Creating Server Initialization Queue")
+            lq = conn.create_queue(self._launcher_model['launcher_sqs_in'])
+            ctr = 1.25 *ctr + 1
+        return lq
+
+
+    @property
+    def launcher_q_out(self):
+        conn = boto.sqs.connect_to_region('us-east-1')
+        lq = conn.create_queue( self._launcher_model['launcher_sqs_out'] )
+        ctr = 0
+        while not lq:
+            time.sleep(max(ctr,60))
+            self.logger.warning("Creating Server Initialization Queue")
+            lq = conn.create_queue(self._launcher_model['launcher_sqs_out'])
+            ctr = 1.25 *ctr + 1
+        return lq
 
     def _load_config(self ):
         """
@@ -251,7 +386,7 @@ class ServerManager:
 
     def _configure_data_source_files( self ):
         dest_data = self._run_model['dest_data']
-        self.source_files = ( 
+        self.source_files = (
                 dest_data[ 'working_bucket' ],
                 dest_data[ 'dataframe_file' ],
                 dest_data[ 'meta_file' ] )
@@ -266,7 +401,7 @@ class ServerManager:
 
     def _configure_gpu_aws_locations( self ):
         intercomm_settings = self._run_model['intercomm_settings']
-        self.aws_locations['gpu'] = ( 
+        self.aws_locations['gpu'] = (
                 intercomm_settings[ 'sqs_from_data_to_gpu' ],
                 intercomm_settings[ 'sqs_from_gpu_to_agg' ],
                 intercomm_settings[ 's3_from_data_to_gpu' ],
@@ -333,10 +468,10 @@ def log_subprocess_messages( sc_p, q, base_message):
     errors = False
     ctr = 0
     while True:
-        ctr += 1
         reads = [sc_p.stdout.fileno(), sc_p.stderr.fileno()]
         ret = select.select(reads, [], [])
         for fd in ret[0]:
+            ctr += 1
             base_message['time'] = datetime.now().isoformat()
             base_message['count'] = ctr
             if fd == sc_p.stdout.fileno():
@@ -362,38 +497,38 @@ def log_subprocess_messages( sc_p, q, base_message):
             q.write(Message(body=json.dumps(base_message)))
             break
 
-def run_sc(url, master_name,cluster_name ):
+def run_sc( worker_id ):
     """
     This runs the starcluster commands necessary to instantiate
     a worker cluster.
-
-    starcluster_bin - the path to the starcluster binary
-
     """
-    launcher_config = sd_model.get_system_defaults( 
+    launcher_config = sd_model.get_system_defaults(
             setting_name='launcher_config', component='Master')
+
     #path to starcluster exe
     starcluster_bin = launcher_config['starcluster_bin']
     #url to page that returns cluster config template
-    sc_config_url = launcher_config['sc_config_url'] 
-    adv_ser = ANServer(master_name, cluster_name, no_create=True)
+    base_sc_config_url = launcher_config['sc_config_url']
+    sc_config_url = base_sc_config_url + '/' + worker_id
+    worker_model = get_ANWorker( worker_id=worker_id )
+    master_name = worker_model['master_name']
+    cluster_name = worker_model['cluster_name']
     pid = multiprocessing.current_process()
+    wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.STARTING,
+            startup_pid=pid)
+
     base_message = {'cluster_name': cluster_name, 'master_name': master_name, 'pid':str(pid) }
     sqs =boto.sqs.connect_to_region("us-east-1")
-    q = sqs.create_queue('starcluster-results')
-    if adv_ser.active:
-        base_message['type'] = 'system'
-        base_message['msg'] = 'Error: already active'
-        q.write( Message(body=json.dumps(message)) )
-        return
+    q = sqs.create_queue(launcher_config['startup_logging_queue'])
+
     sc_command = "%s -c %s/%s/%s start -c %s %s" %( os.path.expanduser(starcluster_bin), url,master_name, cluster_name, cluster_name, cluster_name)
     base_message['command'] = sc_command
     sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
     adv_ser.set_active()
     adv_ser.set_startup_pid(str(sc_p.pid))
     log_subprocess_messages( sc_p, q, base_message)
- 
+
 if __name__ == "__main__":
-    si = ServerInterface({'name':'test', 'command':'test', 
+    si = ServerInterface({'name':'test', 'command':'test',
         'response':'test', 'instance-id':'test', 'zone':'test'})
 
