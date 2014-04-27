@@ -87,6 +87,8 @@ def set_system_defaults():
     item = ANSystemDefaults('launcher_config', 'Master')
     item.settings = {'launcher_sqs_in':'aurea-nebula-launcher-in',
             'launcher_sqs_out':'aurea-nebula-launcher-out',
+            'starcluster_bin' : '/home/sgeadmin/.local/bin/starcluster',
+            'sc_config_url' : 'https://aurea-nebula.adversary.us/cm/config',
             'key_location':'/home/sgeadmin'}
     item.save()
 

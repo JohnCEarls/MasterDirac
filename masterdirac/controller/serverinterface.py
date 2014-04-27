@@ -9,6 +9,8 @@ import numpy as np
 import collections
 import time
 import boto.ec2
+from datetime import datetime
+import select
 
 class ServerInterface(object):
     def __init__(self, init_message):
@@ -308,6 +310,89 @@ class ServerManager:
                 ]
                 }
         self._gpu_mem_req = em+sm+gm+rt+srt+rms
+
+############################################
+# Shared Worker Cluster Server startup
+# functions
+############################################
+
+
+def log_subprocess_messages( sc_p, q, base_message):
+    """
+    Reads messages from stdout/stderr and writes them to
+    given queue(q).
+
+    Used on cluster startup to observe progress
+
+    sc_p : subprocess that is launching the cluster
+    q : boto.sqs.Queue that accepts messages
+    base_message : dictionary that contains the message template
+    """
+    stdout = []
+    stderr = []
+    errors = False
+    ctr = 0
+    while True:
+        ctr += 1
+        reads = [sc_p.stdout.fileno(), sc_p.stderr.fileno()]
+        ret = select.select(reads, [], [])
+        for fd in ret[0]:
+            base_message['time'] = datetime.now().isoformat()
+            base_message['count'] = ctr
+            if fd == sc_p.stdout.fileno():
+                read = sc_p.stdout.readline()
+                base_message['type'] ='stdout'
+                base_message['time'] = datetime.now().isoformat()
+                base_message['msg'] = read.strip()
+                q.write(Message(body=json.dumps(base_message)))
+            if fd == sc_p.stderr.fileno():
+                read = sc_p.stderr.readline()
+                base_message['type'] ='stderr'
+                base_message['msg'] = read.strip()
+                q.write(Message(body=json.dumps(base_message)))
+        if sc_p.poll() != None:
+            #process exitted
+            ctr += 1
+            base_message['time'] = datetime.now().isoformat()
+            base_message['count'] = ctr
+            base_message['type'] = 'system'
+            base_message['msg'] = 'Complete'
+            if errors:
+                base_message['msg'] += ':Errors exist'
+            q.write(Message(body=json.dumps(base_message)))
+            break
+
+def run_sc(url, master_name,cluster_name ):
+    """
+    This runs the starcluster commands necessary to instantiate
+    a worker cluster.
+
+    starcluster_bin - the path to the starcluster binary
+
+    """
+    launcher_config = sd_model.get_system_defaults( 
+            setting_name='launcher_config', component='Master')
+    #path to starcluster exe
+    starcluster_bin = launcher_config['starcluster_bin']
+    #url to page that returns cluster config template
+    sc_config_url = launcher_config['sc_config_url'] 
+    adv_ser = ANServer(master_name, cluster_name, no_create=True)
+    pid = multiprocessing.current_process()
+    base_message = {'cluster_name': cluster_name, 'master_name': master_name, 'pid':str(pid) }
+    sqs =boto.sqs.connect_to_region("us-east-1")
+    q = sqs.create_queue('starcluster-results')
+    if adv_ser.active:
+        base_message['type'] = 'system'
+        base_message['msg'] = 'Error: already active'
+        q.write( Message(body=json.dumps(message)) )
+        return
+    sc_command = "%s -c %s/%s/%s start -c %s %s" %( os.path.expanduser(starcluster_bin), url,master_name, cluster_name, cluster_name, cluster_name)
+    base_message['command'] = sc_command
+    sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
+    adv_ser.set_active()
+    adv_ser.set_startup_pid(str(sc_p.pid))
+    log_subprocess_messages( sc_p, q, base_message)
+ 
 if __name__ == "__main__":
     si = ServerInterface({'name':'test', 'command':'test', 
         'response':'test', 'instance-id':'test', 'zone':'test'})

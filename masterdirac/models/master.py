@@ -5,10 +5,10 @@ from datetime import datetime
 
 #STATES
 NA = -10
+TERMINATED_WITH_ERROR = -5
 INIT = 0
 RUN = 10
 TERMINATED = 30
-
 
 class ANMaster(Model):
     class Meta:
