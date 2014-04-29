@@ -1,4 +1,3 @@
-import boto
 import boto.dynamodb2
 from boto.s3.key import Key
 from utils import hddata_process
@@ -169,7 +168,8 @@ def run( data_sizes, master_model, run_model):
     terminate = False
     while not terminate:
         logger.debug("Starting work cycle")
-        manager.poll_for_server(timeout=5)
+        manager.poll_launcher( timeout=5 )
+        manager.poll_for_server( timeout=5 )
         if manager.has_work():
             manager.send_run()
         terminate = manager.inspect()

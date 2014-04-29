@@ -159,8 +159,6 @@ class ServerManager:
         for k,server in self.gpu_servers.iteritems():
             if server.get_responses():
                 self.logger.info("%s(gpu server): has response" % k)
-        self.poll_launcher()
-
         return False
 
     def _handle_server_init( self, message ):
@@ -199,7 +197,10 @@ class ServerManager:
         self.logger.info( 'started startup process for [%s]' % (worker_id,) )
         self.cluster_startup_processes.append( startup_process )
 
-    def poll_launcher( self ):
+    def poll_launcher( self, timeout=20 ):
+        """
+        Checks launcher_q_in for messages from web server
+        """
         messages = self.launcher_q_in.get_messages( wait_time_seconds = timeout )
         for mess in messages:
             launch_mess = json.loads( mess.get_body() )
@@ -207,8 +208,30 @@ class ServerManager:
             self._handle_launcher( launch_mess )
 
     def _handle_launcher( self, launch_mess):
-        if launch_mess['
-        #TODO: handle launch message
+        """
+        Handles requests from web server
+        """
+        if launch_mess['action'] == 'activate':
+            try:
+                self.launch_cluster( launch_mess['worker_id'] )
+            except Exception as e:
+                self.logger.error( "Attempt to launch cluster failed [%r]" % (
+                    launch_mess))
+                self.logger.error( "Abort launch")
+                self._abort_launch( launch_mess, e )
+
+    def _abort_launch( self, launch_mess, except_obj ):
+        """
+        Notifies the web server that an error occurred
+        """
+        abort_message = {'status': 'error',
+                        'data': launch_mess,
+                        'message' : "%r" % (except_obj,)
+                        }
+        m = Message( body=json.dumps( abort_message ) )
+        self.launcher_q_out.write( m )
+
+
  
     def _prep_launch_region( self, region ):
         """
