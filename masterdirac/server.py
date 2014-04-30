@@ -11,17 +11,12 @@ import base64
 import random
 import string
 from boto.dynamodb2.table import Table
-import datetime
 from boto.dynamodb2.items import Item
+import datetime
 import boto.utils
 import masterdirac.models.systemdefaults as sys_def
 import masterdirac.models.master as master_mdl
 import time
-
-def get_master_name():
-    inst_id = boto.utils.get_instance_metadata()['instance-id']
-    print inst_id
-    return inst_id
 
 def init_data( run_model ):
     """
@@ -32,7 +27,6 @@ def init_data( run_model ):
     source_data = run_model['source_data']
     dest_data = run_model['dest_data']
     network_config = run_model['network_config']
-
     args = ( source_data[ 'bucket'],
             source_data[ 'data_file'],
             source_data[ 'meta_file'],
@@ -42,7 +36,6 @@ def init_data( run_model ):
             local_config['working_dir'] )
     logger = logging.getLogger('DataInit')
     logger.info("Getting source data")
-
     hddata_process.get_from_s3( *args )
     logger.info("Generating dataframe")
     hddg = hddata_process.HDDataGen( local_config['working_dir'] )
@@ -52,7 +45,6 @@ def init_data( run_model ):
                                 source_data[ 'synonym_file'],
                                 network_config[ 'network_table'],
                                 network_config[ 'network_source'])
-
     logger.info("Sending dataframe to s3://%s/%s" % ( 
         dest_data[ 'working_bucket'], 
         dest_data[ 'dataframe_file'] ) )
@@ -74,6 +66,7 @@ def init_data( run_model ):
     return (max_nsamples, max_ngenes, max_nnets, max_comp)
 
 def init_infrastructure():
+    raise Exception("init_infrastructure DEPRECATED")
     logger = logging.getLogger('init_infrastructure')
     #make sure init queue is available
     local_config =  sys_def.get_system_defaults( 'local_settings', 'Master' )
@@ -96,9 +89,26 @@ def init_infrastructure():
         master_model = init_master_model()
     return master_model
 
+
+def get_master_name():
+    """
+    Returns a unique identifier for this server.
+    TODO:
+    This needs to be improved to handle
+        -restart
+        -the same instance popping up at a different time
+        -multiple servers on same instance?
+    """
+    inst_id = boto.utils.get_instance_metadata()['instance-id']
+    return inst_id
+
 def init_master_model():
+    """
+    Run if a model does not already exist 
+    """
+    raise Exception("init_master_model()")
     master_name = get_master_name()
-    instance_id = get_master_name()
+    instance_id = boto.utils.get_instance_metadata()['instance-id']
     local_config =  sys_def.get_system_defaults( 'local_settings', 'Master' )
     comm_queue = local_config['init-queue'] 
     status = master_mdl.INIT 
@@ -151,18 +161,14 @@ def get_work( run_model, perm=True ):
     else:
         return [(run_id, strain, 1, False, k) for strain in md.get_strains() ]
 
-def run( data_sizes, master_model, run_model):
+def run( manager ): #data_sizes, master_model, run_model):
 
     logger = logging.getLogger("MasterServer.run")
     logger.info("Getting work")
     #work = get_work( config, perm = False )
     logger.info("Creating Server Manager")
-    master_mdl.insert_master( master_model['master_name'], 
-            status = master_mdl.RUN )
-    
-    manager = controller.serverinterface.ServerManager(data_sizes,
-            master_model, run_model )
     logger.info("Adding work to manager")
+    manager.status = master_mdl.RUN
     manager.add_work( get_work(run_model, perm=False) )
     manager.add_work( get_work(run_model, perm=True) )
     terminate = False
@@ -200,12 +206,12 @@ def get_run( master_model ):
 
 def main():
     from masterdirac.utils import debug
+    import masterdirac.controller.serverinterface as si
     name = 'MasterServer'
     debug.initLogging()
     logger = logging.getLogger(name)
-
-    master_model = init_infrastructure()
-    logger.info( "Current model %r" % master_model )
+    logger.info( "Starting ServerManager" )
+    manager = si.ServerManager( get_master_name()  )
     run_model = get_run( master_model )
     while run_model is None:
         logger.warning("No run available") 
@@ -214,5 +220,5 @@ def main():
         #need to get a term signal somewhere
     data_sizes = init_data( run_model )
     run( data_sizes, master_model, run_model )
-    master_mdl.insert_master( master_model['master_name'], 
+    master_mdl.insert_master( manager.master_model['master_name'], 
             status = master_mdl.TERMINATED )

@@ -2,6 +2,7 @@ from pynamodb.models import Model
 from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
         NumberAttribute, UnicodeSetAttribute, JSONAttribute)
 from datetime import datetime
+import json
 
 #STATUS_CODES
 CONFIG = -10
@@ -24,6 +25,7 @@ class ANRun(Model):
     run_settings = JSONAttribute( default={} )
     intercomm_settings = JSONAttribute( default={} )
     aggregator_settings = JSONAttribute( default={} )
+    data_sizes = UnicodeAttribute( default='' )
     date_created = UTCDateTimeAttribute( default = datetime.utcnow() )
     status = NumberAttribute(default=CONFIG)
 
@@ -37,7 +39,9 @@ def insert_ANRun( run_id,
         run_settings=None,
         intercomm_settings=None, 
         aggregator_settings=None,
-        status=None ):
+        status=None,
+        data_sizes=None
+        ):
     item = ANRun( run_id )
     if master_name is not None:
         item.master_name = master_name
@@ -59,6 +63,10 @@ def insert_ANRun( run_id,
         item.aggregator_settings = aggregator_settings
     if status is not None:
         item.status = status
+    if data_sizes is not None:
+        if type(data_sizes) is tuple:
+            data_sizes = json.dumps( data_sizes )
+        item.data_sizes = data_sizes
     item.save()
     return to_dict(item)
 
@@ -76,6 +84,11 @@ def to_dict( run_item ):
     result['aggregator_settings'] = run_item.aggregator_settings
     result['date_created'] = run_item.date_created
     result['status'] = run_item.status
+    if run_item.data_sizes:
+        result['data_sizes'] = json.loads( run_item.data_sizes )
+    else:
+        result['data_sizes'] = None
+
     return result
 
 def get_ANRun( run_id=None ):

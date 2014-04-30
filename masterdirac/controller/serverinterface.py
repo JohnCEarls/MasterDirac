@@ -1,20 +1,34 @@
 import json
+import numpy as np
+import datadirac.data
+import os
+import os.path
+import logging
+import base64
+import random
+import string
+import boto.dynamodb2
+from boto.dynamodb2.table import Table
+from boto.dynamodb2.items import Item
 import boto
 import boto.utils
 import boto.sqs
 from boto.sqs.message import Message
+import boto.ec2
+from boto.s3.key import Key
 import logging
-from masterdirac.utils import dtypes
 import numpy as np
 import collections
 import time
-import boto.ec2
 from datetime import datetime
 import select
-import masterdirac.models.master as mstr_mdl
+import masterdirac.models.master as master_mdl
 import masterdirac.models.worker as wkr_mdl
 import masterdirac.models.systemdefaults as sys_def_mdl
-import os
+import masterdirac.models.run as run_mdl
+from masterdirac.utils import hddata_process
+from masterdirac.utils import dtypes
+
 class ServerInterface(object):
     def __init__(self, init_message):
         self.name = init_message['name']
@@ -79,10 +93,11 @@ class ServerManager:
     """
     Manages and Initializes GPU and Data Servers
     """
-    def __init__(self, data_sizes, master_model, run_model):
+    def __init__(self, master_name):
         self.logger = logging.getLogger("ServerManager")
         #mainly to keep track of instance variables
-        #these are set in following methods
+        #these are set in configure_run 
+        self.logger.debug("ServerManager.__init__( %s )" % (master_name) )
         self.block_sizes = None
         self.k = None
         self._gpu_mem_req = None
@@ -94,18 +109,87 @@ class ServerManager:
         self.aws_locations = {}
         self.gpu_ids = {}
         self.cluster_startup_processes = []
-        self._master_model = master_model
-        self._run_model = run_model
-        self._launcher_model = sys_def_mdl.get_system_defaults( 
-                setting_name = 'launcher_config', component='Master' )
-        #now we actually set all of these variables
-        self.logger.debug("Loading Configs")
-        self._load_config()
-        self._configure_data()
-        self._configure_gpu(data_sizes)
-        assert self._gpu_mem_req < self.get_mem_max, "Not enough memory on gpu"
+        self._run_model = None
+        self._init_queues()
+        self._local_settings = self._get_local_settings()
+        self._launcher_model = self._get_launcher_config()
+        self._master_model = self._get_master_model()
         self.logger.debug("exit __init__")
 
+    def manage_run( self ):
+        logger = self.logger
+        logger.info("Getting work")
+        #work = get_work( config, perm = False )
+        logger.info("Creating Server Manager")
+        logger.info("Adding work to self")
+        active_run = self.get_run()
+        if active_run and self.status != master_mdl.RUN:
+            self.status = master_mdl.RUN
+        if active_run is not None:
+            self.configure_run( active_run )    
+            self._partition_run( )
+            self.add_work( get_work(run_model, perm=False) )
+            self.add_work( get_work(run_model, perm=True) )
+        terminate = False
+        while not terminate:
+            logger.debug("Starting work cycle")
+            self.poll_launcher( timeout=5 )
+            self.poll_for_server( timeout=5 )
+            if self.has_work():
+                self.send_run()
+            terminate = self.inspect()
+            logger.debug("Ending work cycle")
+        #self.terminate_data_servers()
+        logger.info("Exiting run")
+
+    def get_run( self ):
+        """
+        Look for active/scheduled runs
+        """
+        logger = self.logger
+        logger.debug("Looking for current run")
+        master_name = self._master_name
+        for item in run_mdl.ANRun.scan():
+            #TODO: fix Pynamo scan
+            active_run = self._check_run( item)
+            if active_run is not None:
+                logger.info("Have run")
+                return active_run
+        logger.info("No run found")
+        return None
+
+    def _check_run( self, run_item ):
+        """
+        Checks if this run is ours for processing
+        """
+        if run_item.status == run_mdl.INIT:
+            #new run
+            run_item.master_name = self._master_name
+            run_item.status = run_mdl.ACTIVE
+            run_item.save()
+            return run_mdl.to_dict(run_item)
+        elif run_item.status == run_mdl.ACTIVE:
+            #already active run
+            if run_item.master_name == self._master_name:
+                return run_mdl.to_dict(run_item)
+        return None
+
+
+    def configure_run( self):
+        self._run_model = run_model
+        if self.data_ready():
+            self.init_data()
+        self.logger.debug("Loading Configs")
+        self._load_run_config()
+        self._configure_data()
+        self._configure_gpu(run_model['data_sizes'])
+
+    def data_ready(self):
+        """
+        Grossly oversimplified
+        """
+        return self._run_model['data_sizes'] is None
+            
 
     def add_work( self, work):
         for job in work:
@@ -120,6 +204,10 @@ class ServerManager:
         return len(self.work) > 0
 
     def poll_for_server(self, timeout=20):
+        """
+        Checks for messages indicating that a worker server has started
+        and is waiting for instructions
+        """
         messages = self.init_q.get_messages( wait_time_seconds = timeout )
         for mess in messages:
             serv_mess = json.loads( mess.get_body() )
@@ -161,6 +249,54 @@ class ServerManager:
                 self.logger.info("%s(gpu server): has response" % k)
         return False
 
+    def init_data(self ):
+        """
+        Grabs data sources from s3, creates the dataframe needed
+        by the system and moves it to another s3 bucket
+        """
+        run_model = self._run_model
+        local_config = self._local_settings
+        source_data = run_model['source_data']
+        dest_data = run_model['dest_data']
+        network_config = run_model['network_config']
+        args = ( source_data[ 'bucket'],
+                source_data[ 'data_file'],
+                source_data[ 'meta_file'],
+                source_data[ 'annotations_file'],
+                source_data[ 'synonym_file'],
+                source_data[ 'agilent_file'],
+                local_config['working_dir'] )
+        logger = self.logger 
+        logger.info("Getting source data")
+        hddata_process.get_from_s3( *args )
+        logger.info("Generating dataframe")
+        hddg = hddata_process.HDDataGen( local_config['working_dir'] )
+        df,net_est = hddg.generate_dataframe( source_data[ 'data_file'],
+                                    source_data[ 'annotations_file'],
+                                    source_data[ 'agilent_file'],
+                                    source_data[ 'synonym_file'],
+                                    network_config[ 'network_table'],
+                                    network_config[ 'network_source'])
+        logger.info("Sending dataframe to s3://%s/%s" % ( 
+            dest_data[ 'working_bucket'], 
+            dest_data[ 'dataframe_file'] ) )
+        hddg.write_to_s3( dest_data[ 'working_bucket'],
+                df, dest_data[ 'dataframe_file'] )
+        conn = boto.connect_s3()
+        source = conn.get_bucket( source_data['bucket'] )
+        k = Key(source)
+        k.key = source_data['meta_file']
+        k.copy( dest_data[ 'working_bucket' ], k.name )
+        logger.info("Sending metadata file to s3://%s/%s" % (
+                        dest_data[ 'working_bucket' ], k.name ))
+        max_nsamples = len(df.columns)
+        max_ngenes = len(df.index)
+        max_nnets = len(net_est)
+        max_comp = sum([x*(x-1)/2 for x in net_est])
+        logger.debug( "UB on dims4 samp[%i], gen[%i],nets[%i], comp[%s]" % (
+                    max_nsamples, max_ngenes, max_nnets, max_comp) )
+        return (max_nsamples, max_ngenes, max_nnets, max_comp)
+
     def _handle_server_init( self, message ):
         self.logger.debug("Handling message %s" % json.dumps( message ) )
         if message['message-type'] == 'gpu-init':
@@ -200,6 +336,7 @@ class ServerManager:
     def poll_launcher( self, timeout=20 ):
         """
         Checks launcher_q_in for messages from web server
+        Stuff like start cluster, etc.
         """
         messages = self.launcher_q_in.get_messages( wait_time_seconds = timeout )
         for mess in messages:
@@ -231,8 +368,6 @@ class ServerManager:
         m = Message( body=json.dumps( abort_message ) )
         self.launcher_q_out.write( m )
 
-
- 
     def _prep_launch_region( self, region ):
         """
         Returns ( key_name, key_path )
@@ -278,16 +413,16 @@ class ServerManager:
         os.chmod( key_path, 0600 )
         self._master_model['key_pairs'][aws_region] = key_name
         self.logger.info("Updating master model")
-        mstr_mdl.insert_master( self._master_model['master_name'], 
+        master_mdl.insert_master( self._master_model['master_name'], 
                 key_pairs = self._model['key_pairs'])
-        
         return ( key_name, key_path )
 
     def _gen_key_name( self, aws_region):
         """
         Given region, generate a key name specific to this master
         """
-        key_name = 'sc-key-%s-%s' % (self._master_model['master_name'], aws_region )
+        key_name = 'sc-key-%s-%s' % (self._master_model['master_name'], 
+                aws_region )
         return key_name
 
     def _get_key_file_name( self, key_name):
@@ -336,6 +471,24 @@ class ServerManager:
         return 2*1024*1024*1024
 
     @property
+    def status(self):
+        return self.master_model['status']
+
+    @status.setter
+    def status( self, value ):
+        self.master_model = {'status', value}
+
+    @property
+    def master_model(self):
+        return self._master_model
+
+    @master_model.setter
+    def master_model( self, value ):
+        for k,v in value.iteritems():
+            self._master_model[k] = v
+        self._master_model = master_mdl.insert_master( **self._master_model )
+
+    @property
     def init_q(self):
         """
         Returns the Server Initialization Queue
@@ -362,7 +515,6 @@ class ServerManager:
             ctr = 1.25 *ctr + 1
         return lq
 
-
     @property
     def launcher_q_out(self):
         conn = boto.sqs.connect_to_region('us-east-1')
@@ -375,7 +527,54 @@ class ServerManager:
             ctr = 1.25 *ctr + 1
         return lq
 
-    def _load_config(self ):
+    def _init_queues(self):
+        logger = self.logger
+        #make sure init queue is available
+        local_config = self._local_settings
+        launcher_config = self._launcher_model
+        conn = boto.sqs.connect_to_region( 'us-east-1' )
+        q = conn.create_queue( local_config['init-queue'] )
+        if not q:
+            logger.error("Init Q not created")
+            raise Exception("Unable to initialize Init Q")
+        q = conn.create_queue( launcher_config['launcher_sqs_in'] )
+        if not q:
+            logger.error("launcher in Q not created")
+            raise Exception("Unable to initialize launcher in Q")
+        q = conn.create_queue( launcher_config['launcher_sqs_out'] )
+        if not q:
+            logger.error("launcher out Q not created")
+            raise Exception("Unable to initialize launcher out Q")
+
+    def _get_master_model( self ):
+        master_model = master_mdl.get_master( self._master_name )
+        if not master_model:
+            master_model = self._init_master_model()
+        return master_model
+
+    def _init_master_model(self):
+        """
+        Run if a model does not already exist 
+        """
+        self.logger.info("Initializing Master Model")
+        master_name = self._master_name
+        instance_id = boto.utils.get_instance_metadata()['instance-id']
+        comm_queue = self._local_settings['init-queue'] 
+        status = master_mdl.INIT 
+        inst_md = boto.utils.get_instance_metadata()
+        aws_region = inst_md['placement']['availability-zone'][:-1]
+        return master_mdl.insert_master( master_name, 
+            aws_region=aws_region,
+            instance_id = instance_id,
+            comm_queue = comm_queue,
+            status = status )
+
+    def _get_local_settings(self): 
+        return sys_def_mdl.get_system_defaults( 'local_settings', 'Master' )
+
+    def _get_launcher_config(self):
+        return sys_def_mdl.get_system_defaults( 'launcher_config', 'Master' )
+    def _load_run_config(self ):
         """
         Loads run specific settings from config file
         """
@@ -490,35 +689,44 @@ def log_subprocess_messages( sc_p, q, base_message):
     stderr = []
     errors = False
     ctr = 0
-    while True:
+
+    log_message = base_message.copy()
+    log_message['time'] = datetime.now().isoformat()
+    log_message['type'] = 'init'
+    log_message['msg'] = 'Starting'
+    log_message['count'] = ctr
+    q.write( Message( body = json.dumps( log_message ) ) )
+    
+    cont = True
+    while cont:
         reads = [sc_p.stdout.fileno(), sc_p.stderr.fileno()]
         ret = select.select(reads, [], [])
+        log_message = base_message.copy()
         for fd in ret[0]:
             ctr += 1
-            base_message['time'] = datetime.now().isoformat()
-            base_message['count'] = ctr
+            log_message['time'] = datetime.now().isoformat()
+            log_message['count'] = ctr
             if fd == sc_p.stdout.fileno():
                 read = sc_p.stdout.readline()
-                base_message['type'] ='stdout'
-                base_message['time'] = datetime.now().isoformat()
-                base_message['msg'] = read.strip()
-                q.write(Message(body=json.dumps(base_message)))
+                log_message['type'] ='stdout'
+                log_message['time'] = datetime.now().isoformat()
+                log_message['msg'] = read.strip()
+                q.write(Message(body=json.dumps(log_message)))
             if fd == sc_p.stderr.fileno():
                 read = sc_p.stderr.readline()
-                base_message['type'] ='stderr'
-                base_message['msg'] = read.strip()
-                q.write(Message(body=json.dumps(base_message)))
-        if sc_p.poll() != None:
-            #process exitted
-            ctr += 1
-            base_message['time'] = datetime.now().isoformat()
-            base_message['count'] = ctr
-            base_message['type'] = 'system'
-            base_message['msg'] = 'Complete'
-            if errors:
-                base_message['msg'] += ':Errors exist'
-            q.write(Message(body=json.dumps(base_message)))
-            break
+                log_message['type'] ='stderr'
+                log_message['msg'] = read.strip()
+                q.write(Message(body=json.dumps(log_message)))
+        cont = sc_p.poll() != None
+    #process exitted
+    ctr += 1
+    log_message['time'] = datetime.now().isoformat()
+    log_message['count'] = ctr
+    log_message['type'] = 'system'
+    log_message['msg'] = 'Complete'
+    if errors:
+        log_message['msg'] += ':Errors exist'
+    q.write(Message(body=json.dumps(log_message)))
 
 def run_sc( worker_id ):
     """
@@ -540,15 +748,19 @@ def run_sc( worker_id ):
     wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.STARTING,
             startup_pid=pid)
 
-    base_message = {'cluster_name': cluster_name, 'master_name': master_name, 'pid':str(pid) }
+    base_message = {
+                        'cluster_name': cluster_name, 
+                        'master_name': master_name, 
+                        'pid':str(pid) 
+                    }
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
-
-    sc_command = "%s -c %s/%s/%s start -c %s %s" %( os.path.expanduser(starcluster_bin), url,master_name, cluster_name, cluster_name, cluster_name)
+    sc_command = "%s -c %s/%s/%s start -c %s %s" % ( 
+            os.path.expanduser(starcluster_bin), 
+            sc_config_url,
+            master_name, cluster_name, cluster_name, cluster_name)
     base_message['command'] = sc_command
     sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
-    adv_ser.set_active()
-    adv_ser.set_startup_pid(str(sc_p.pid))
     log_subprocess_messages( sc_p, q, base_message)
 
 if __name__ == "__main__":
