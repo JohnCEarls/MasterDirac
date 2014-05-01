@@ -2,13 +2,16 @@ from pynamodb.models import Model
 from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
         NumberAttribute, UnicodeSetAttribute, JSONAttribute)
 from datetime import datetime
-
+import logging
+import boto.ec2
+import boto.exception
 #STATES
 NA = -10
 TERMINATED_WITH_ERROR = -5
 INIT = 0
 RUN = 10
 TERMINATED = 30
+logger = logging.getLogger(__name__)
 
 class ANMaster(Model):
     class Meta:
@@ -38,9 +41,49 @@ def get_active_master( ):
     masters = get_master()
     for master in masters:
         if master['status'] in [INIT, RUN]:
-            return master
+            if confirm_master_active( master ):
+                return master
+            else:
+                master['status'] = TERMINATED_WITH_ERROR
+                insert_master( **master )
     return None
 
+def handle_inconsistent_masters():
+    masters = get_master()
+    for master in masters:
+        _handle_inconsistent_master( master)
+        
+def _handle_inconsistent_master( master):
+    if master['status'] in [INIT, RUN] and not confirm_master_active(master):
+        logger.error(("Master server with inconsistent status [%r]"
+            ) % ( master ))
+        try:
+            master['status'] = TERMINATED_WITH_ERROR
+            insert_master( **master )
+            logger.error( ("Master server [%s] status changed"
+                " to TERMINATED_WITH_ERROR") % ( master['master_name'] ) )
+        except:
+            logger.exception("Something horrible going on in the db")
+
+
+
+def confirm_master_active(master):
+    try:
+        conn = boto.ec2.connect_to_region( master['aws_region'] )
+        for reservation in conn.get_all_reservations( 
+                                  instance_ids=[master['instance_id']] ):
+            for inst in reservation.instances:
+                if (inst.id, inst.state) == (master['instance_id'], 'running'):
+                    return True
+    except AttributeError as ae:
+        logger.exception("Unable to connect to [%s] region." % (
+            master['aws_region'] ))
+        logger.error("Error attempting to confirm [%r]" % ( master ))
+    except boto.exception.EC2ResponseError as ec2e:
+        logger.exception("%s is an invalid instance id in %s region." % (
+            master['instance_id'], master['aws_region'] ))
+        logger.error("Error attempting to confirm [%r]" % ( master ))
+    return False
 
 def get_master( master_name=None):
     if master_name is None:
@@ -62,7 +105,8 @@ def insert_master( master_name,
         key_pairs=None,
         instance_id = None,
         comm_queue = None,
-        status = None ):
+        status = None,
+        **kwargs):
     item = ANMaster( master_name )
     if aws_region is not None:
         item.aws_region = aws_region
