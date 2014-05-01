@@ -36,7 +36,7 @@ class ServerManager:
     def __init__(self, master_name):
         self.logger = logging.getLogger("ServerManager")
         #mainly to keep track of instance variables
-        #these are set in _configure_run 
+        #these are set in _configure_run
         self.logger.debug("ServerManager.__init__( %s )" % (master_name) )
         self.block_sizes = None
         self.k = None
@@ -135,7 +135,7 @@ class ServerManager:
         Going to have to modify the data size part if allowing k to float
         """
         run_model = self._run_model
-        local_config = self._local_settings 
+        local_config = self._local_settings
         source_data = run_model['source_data']
         run_settings = run_model['run_settings']
         md = datadirac.data.MetaInfo( os.path.join(
@@ -252,7 +252,7 @@ class ServerManager:
                 source_data[ 'synonym_file'],
                 source_data[ 'agilent_file'],
                 local_config['working_dir'] )
-        logger = self.logger 
+        logger = self.logger
         logger.info("Getting source data")
         hddata_process.get_from_s3( *args )
         logger.info("Generating dataframe")
@@ -263,8 +263,8 @@ class ServerManager:
                                     source_data[ 'synonym_file'],
                                     network_config[ 'network_table'],
                                     network_config[ 'network_source'])
-        logger.info("Sending dataframe to s3://%s/%s" % ( 
-            dest_data[ 'working_bucket'], 
+        logger.info("Sending dataframe to s3://%s/%s" % (
+            dest_data[ 'working_bucket'],
             dest_data[ 'dataframe_file'] ) )
         hddg.write_to_s3( dest_data[ 'working_bucket'],
                 df, dest_data[ 'dataframe_file'] )
@@ -301,19 +301,19 @@ class ServerManager:
         """
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
         if worker_model.status != wkr_mdl.CONFIG:
-            self.logger.error(( 'Attempted to startup [%s]' 
+            self.logger.error(( 'Attempted to startup [%s]'
                 ' and status is wrong [%r]') % (worker_id, worker_model))
-            raise Exception(('Attempted to startup [%s] and' 
+            raise Exception(('Attempted to startup [%s] and'
                 ' it is not in a CONFIG stat') % (worker_id) )
-        key_name, key_path = self._prep_launch_region( 
+        key_name, key_path = self._prep_launch_region(
                 worker_model['aws_region'] )
         worker_model['starcluster_config']['key_name'] = key_name
         worker_model['starcluster_config']['key_location'] = key_path
         self.logger.info("Updating worker[%s] key information" % worker_id)
         wkr_mdl.update_ANWorker( worker_id,
                 starcluster_config = worker_model['starcluster_config'] )
-        startup_process = multiprocessing.Process( target = run_sc, 
-                args=( worker_id, ), 
+        startup_process = multiprocessing.Process( target = run_sc,
+                args=( worker_id, ),
                 name=worker_id)
         startup_process.start()
         self.logger.info( 'started startup process for [%s]' % (worker_id,) )
@@ -350,7 +350,7 @@ class ServerManager:
         if region in self._master_model['key_pairs']:
             key_name = self._master_model['key_pairs'][region]
             sys_d = self._launcher_model
-            key_location = os.path.join( sys_d['key_location'], 
+            key_location = os.path.join( sys_d['key_location'],
                     self._get_key_file_name( key_name ) )
             if os.path.exists( key_location ):
                 return ( key_name, key_location )
@@ -388,7 +388,7 @@ class ServerManager:
         os.chmod( key_path, 0600 )
         self._master_model['key_pairs'][aws_region] = key_name
         self.logger.info("Updating master model")
-        master_mdl.insert_master( self._master_model['master_name'], 
+        master_mdl.insert_master( self._master_model['master_name'],
                 key_pairs = self._model['key_pairs'])
         return ( key_name, key_path )
 
@@ -396,7 +396,7 @@ class ServerManager:
         """
         Given region, generate a key name specific to this master
         """
-        key_name = 'sc-key-%s-%s' % (self._master_model['master_name'], 
+        key_name = 'sc-key-%s-%s' % (self._master_model['master_name'],
                 aws_region )
         return key_name
 
@@ -510,7 +510,7 @@ class ServerManager:
         conn = boto.sqs.connect_to_region( 'us-east-1' )
         q_list = [  local_config['init-queue'],
                     launcher_config['launcher_sqs_in'],
-                    launcher_config['launcher_sqs_out']] 
+                    launcher_config['launcher_sqs_out']]
         for q_name in q_list:
             q = conn.create_queue( q_name )
             if not q:
@@ -525,22 +525,22 @@ class ServerManager:
 
     def _init_master_model(self):
         """
-        Run if a model does not already exist 
+        Run if a model does not already exist
         """
         self.logger.info("Initializing Master Model")
         master_name = self._master_name
         instance_id = boto.utils.get_instance_metadata()['instance-id']
-        comm_queue = self._local_settings['init-queue'] 
-        status = master_mdl.INIT 
+        comm_queue = self._local_settings['init-queue']
+        status = master_mdl.INIT
         inst_md = boto.utils.get_instance_metadata()
         aws_region = inst_md['placement']['availability-zone'][:-1]
-        return master_mdl.insert_master( master_name, 
+        return master_mdl.insert_master( master_name,
             aws_region=aws_region,
             instance_id = instance_id,
             comm_queue = comm_queue,
             status = status )
 
-    def _get_local_settings(self): 
+    def _get_local_settings(self):
         return sys_def_mdl.get_system_defaults( 'local_settings', 'Master' )
 
     def _get_launcher_config(self):
@@ -657,48 +657,29 @@ def log_subprocess_messages( sc_p, q, base_message):
     q : boto.sqs.Queue that accepts messages
     base_message : dictionary that contains the message template
     """
-    stdout = []
-    stderr = []
-    errors = False
-    ctr = 0
-
-    log_message = base_message.copy()
-    log_message['time'] = datetime.now().isoformat()
-    log_message['type'] = 'init'
-    log_message['msg'] = 'Starting'
-    log_message['count'] = ctr
-    q.write( Message( body = json.dumps( log_message ) ) )
-    
-    cont = True
-    while cont:
-        reads = [sc_p.stdout.fileno(), sc_p.stderr.fileno()]
-        ret = select.select(reads, [], [])
+    def send_msg( mtype, msg, base_message=base_message, q=q, acc = {'i':0}):
         log_message = base_message.copy()
+        log_message['time'] = datetime.now().isoformat()
+        log_message['type'] = mtype
+        log_message['msg'] = msg
+        log_message['count'] = acc['i']
+        q.write( Message( body=json.dumps( log_message ) ) )
+        acc['i'] =acc['i'] + 1
+
+    send_msg('system', 'Starting')
+
+    cont = True
+    reads = (sc_p.stdout, sc_p.stderr)
+    while cont:
+        ret = select.select(reads, [], [])
         for fd in ret[0]:
-            ctr += 1
-            log_message['time'] = datetime.now().isoformat()
-            log_message['count'] = ctr
             if fd == sc_p.stdout.fileno():
-                read = sc_p.stdout.readline()
-                log_message['type'] ='stdout'
-                log_message['time'] = datetime.now().isoformat()
-                log_message['msg'] = read.strip()
-                q.write(Message(body=json.dumps(log_message)))
+                send_msg('stdout', sc_p.stdout.readline().strip() )
             if fd == sc_p.stderr.fileno():
-                read = sc_p.stderr.readline()
-                log_message['type'] ='stderr'
-                log_message['msg'] = read.strip()
-                q.write(Message(body=json.dumps(log_message)))
-        cont = sc_p.poll() != None
-    #process exitted
-    ctr += 1
-    log_message['time'] = datetime.now().isoformat()
-    log_message['count'] = ctr
-    log_message['type'] = 'system'
-    log_message['msg'] = 'Complete'
-    if errors:
-        log_message['msg'] += ':Errors exist'
-    q.write(Message(body=json.dumps(log_message)))
+                send_msg('stderr', sc_p.stderr.readline().strip() )
+        cont = sc_p.poll() is not None
+    send_msg( 'system', 'Complete: returned[%i]' % cont )
+    return cont
 
 def run_sc( worker_id ):
     """
@@ -721,18 +702,19 @@ def run_sc( worker_id ):
             startup_pid=pid)
 
     base_message = {
-                        'cluster_name': cluster_name, 
-                        'master_name': master_name, 
-                        'pid':str(pid) 
+                        'cluster_name': cluster_name,
+                        'master_name': master_name,
+                        'pid':str(pid)
                     }
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
-    sc_command = "%s -c %s/%s/%s start -c %s %s" % ( 
-            os.path.expanduser(starcluster_bin), 
+    sc_command = "%s -c %s/%s/%s start -c %s %s" % (
+            os.path.expanduser(starcluster_bin),
             sc_config_url,
             master_name, cluster_name, cluster_name, cluster_name)
     base_message['command'] = sc_command
-    sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
+    sc_p = subprocess.Popen( sc_command, 
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
     log_subprocess_messages( sc_p, q, base_message)
 
 if __name__ == "__main__":
