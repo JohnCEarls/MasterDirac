@@ -508,18 +508,14 @@ class ServerManager:
         local_config = self._local_settings
         launcher_config = self._launcher_model
         conn = boto.sqs.connect_to_region( 'us-east-1' )
-        q = conn.create_queue( local_config['init-queue'] )
-        if not q:
-            logger.error("Init Q not created")
-            raise Exception("Unable to initialize Init Q")
-        q = conn.create_queue( launcher_config['launcher_sqs_in'] )
-        if not q:
-            logger.error("launcher in Q not created")
-            raise Exception("Unable to initialize launcher in Q")
-        q = conn.create_queue( launcher_config['launcher_sqs_out'] )
-        if not q:
-            logger.error("launcher out Q not created")
-            raise Exception("Unable to initialize launcher out Q")
+        q_list = [  local_config['init-queue'],
+                    launcher_config['launcher_sqs_in'],
+                    launcher_config['launcher_sqs_out']] 
+        for q_name in q_list:
+            q = conn.create_queue( q_name )
+            if not q:
+                logger.error("%s not created" % q_name)
+                raise Exception("Unable to initialize %s" % q_name)
 
     def _get_master_model( self ):
         master_model = master_mdl.get_master( self._master_name )
