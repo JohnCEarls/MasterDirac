@@ -4,13 +4,21 @@ from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
         )
 from datetime import datetime
 import hashlib
+import logging
+import boto.ec2
+import boto.exception
 #STATES
 NA = -10
 CONFIG = 0
 STARTING = 10
 READY = 20
 RUNNING = 30
+MARKED_FOR_TERMINATION = 35
 TERMINATED = 40
+
+active_statuses = [CONFIG, STARTING, READY, RUNNING, MARKED_FOR_TERMINATION]
+
+logger = logging.getLogger(__name__)
 
 #worker defaults
 
@@ -134,10 +142,31 @@ def get_active_workers():
     """
     results = []
     for item in ANWorker.scan():
-        if item.status in [CONFIG, STARTING, READY, RUNNING]:
+        if item.status in active_statuses:
             results.append( to_dict_ANW( item ) )
     results.sort( key=lambda x: (x['cluster_type'], x['aws_region'], x['status']) )
     return results
+
+def confirm_worker_running( worker ):
+    """
+    Checks that at least one node in the cluster is running
+    """
+    try:
+        conn = boto.ec2.connect_to_region( worker['aws_region'] )
+        for reservation in conn.get_all_reservations( 
+                                  instance_ids=worker['nodes'] ):
+            for inst in reservation.instances:
+                if inst.state == 'running':
+                    return True
+    except AttributeError as ae:
+        logger.exception("Unable to connect to [%s] region." % (
+            worker['aws_region'] ))
+        logger.error("Error attempting to confirm [%r]" % ( worker ))
+    except boto.exception.EC2ResponseError as ec2e:
+        logger.exception("%s is an invalid instance id in %s region." % (
+            worker['instance_id'], worker['aws_region'] ))
+        logger.error("Error attempting to confirm [%r]" % ( worker ))
+    return False
 
 def _get_ANWorker( worker_id ):
     """

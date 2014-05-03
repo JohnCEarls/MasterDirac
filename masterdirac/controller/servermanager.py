@@ -7,6 +7,7 @@ import select
 import os
 import os.path
 import base64
+import multiprocessing
 
 import numpy as np
 
@@ -83,7 +84,7 @@ class ServerManager:
         messages = self.launcher_q_in.get_messages( wait_time_seconds = timeout )
         for mess in messages:
             launch_mess = json.loads( mess.get_body() )
-            self.init_q.delete_message( mess )
+            self.launcher_q_in.delete_message( mess )
             self._handle_launcher( launch_mess )
 
 
@@ -300,7 +301,7 @@ class ServerManager:
         Given a worker id, prepare environment and start cluster.
         """
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
-        if worker_model.status != wkr_mdl.CONFIG:
+        if worker_model['status'] != wkr_mdl.CONFIG:
             self.logger.error(( 'Attempted to startup [%s]'
                 ' and status is wrong [%r]') % (worker_id, worker_model))
             raise Exception(('Attempted to startup [%s] and'
@@ -327,7 +328,7 @@ class ServerManager:
             try:
                 self.launch_cluster( launch_mess['worker_id'] )
             except Exception as e:
-                self.logger.error( "Attempt to launch cluster failed [%r]" % (
+                self.logger.exception( "Attempt to launch cluster failed [%r]" % (
                     launch_mess))
                 self.logger.error( "Abort launch")
                 self._abort_launch( launch_mess, e )
@@ -369,6 +370,7 @@ class ServerManager:
 
     def _gen_key( self, aws_region ):
         ec2 = boto.ec2.connect_to_region( aws_region )
+        key_name = self._gen_key_name( aws_region )
         k_file = self._get_key_file_name( key_name )
         sys_d = self._launcher_model
         key_path = os.path.join( sys_d['key_location'], k_file )
@@ -389,7 +391,7 @@ class ServerManager:
         self._master_model['key_pairs'][aws_region] = key_name
         self.logger.info("Updating master model")
         master_mdl.insert_master( self._master_model['master_name'],
-                key_pairs = self._model['key_pairs'])
+                key_pairs = self.master_model['key_pairs'])
         return ( key_name, key_path )
 
     def _gen_key_name( self, aws_region):
