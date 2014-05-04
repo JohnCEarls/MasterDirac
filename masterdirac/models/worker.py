@@ -9,6 +9,7 @@ import boto.ec2
 import boto.exception
 #STATES
 NA = -10
+TERMINATED_WITH_ERROR = -5
 CONFIG = 0
 STARTING = 10
 READY = 20
