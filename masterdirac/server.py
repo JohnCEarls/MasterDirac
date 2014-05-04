@@ -29,7 +29,7 @@ def main():
         #check for requests to launch servers
         manager.poll_launch_requests( timeout=5 )
         #check for requests from cluster to join the party
-        manager.poll_for_server()
+        manager.poll_for_server( timeout=5)
         #housekeeping, this is largely unimplemented
         terminate = manager.introspect()
     master_mdl.insert_master( manager.master_model['master_name'], 

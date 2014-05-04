@@ -8,6 +8,7 @@ import os
 import os.path
 import base64
 import multiprocessing
+import subprocess
 
 import numpy as np
 
@@ -87,6 +88,12 @@ class ServerManager:
             self.launcher_q_in.delete_message( mess )
             self._handle_launcher( launch_mess )
 
+    def poll_sc_logging( self, timeout=2):
+        messages = self.sc_logging_q.get_messages(wait_time_seconds= timeout)
+        for mess in messages:
+            sc_logging_mess = json.loads( mess.get_body() )
+            self.sc_logging_q.delete_message( mess )
+            self._handle_sc_logging( sc_logging_mess )
 
     def poll_for_server(self, timeout=20):
         """
@@ -111,6 +118,7 @@ class ServerManager:
         for k,server in self.gpu_servers.iteritems():
             if server.get_responses():
                 self.logger.info("%s(gpu server): has response" % k)
+        self.poll_sc_logging()
         return False
 
     def get_run( self ):
@@ -295,6 +303,9 @@ class ServerManager:
         else:
             self.logger.error("Init. Message: %s" %  json.dumps( message ) )
             raise Exception("No initialization found in initialization message")
+
+    def _handle_sc_logging(self, mess ):
+        self.logger.info("%r" % mess)
 
     def launch_cluster(self, worker_id ):
         """
@@ -504,6 +515,18 @@ class ServerManager:
             ctr = 1.25 *ctr + 1
         return lq
 
+    @property
+    def sc_logging_q(self):
+        conn = boto.sqs.connect_to_region('us-east-1')
+        lq = conn.create_queue( self._launcher_model['startup_logging_queue'] )
+        ctr = 0
+        while not lq:
+            time.sleep(max(ctr,60))
+            self.logger.warning("Creating Server Initialization Queue")
+            lq = conn.create_queue(self._launcher_model['launcher_sqs_out'])
+            ctr = 1.25 *ctr + 1
+        return lq
+
     def _init_queues(self):
         logger = self.logger
         #make sure init queue is available
@@ -512,7 +535,9 @@ class ServerManager:
         conn = boto.sqs.connect_to_region( 'us-east-1' )
         q_list = [  local_config['init-queue'],
                     launcher_config['launcher_sqs_in'],
-                    launcher_config['launcher_sqs_out']]
+                    launcher_config['launcher_sqs_out'],
+                    launcher_config['startup_logging_queue']
+                    ]
         for q_name in q_list:
             q = conn.create_queue( q_name )
             if not q:
@@ -688,32 +713,34 @@ def run_sc( worker_id ):
     This runs the starcluster commands necessary to instantiate
     a worker cluster.
     """
-    launcher_config = sd_model.get_system_defaults(
-            setting_name='launcher_config', component='Master')
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+            'Master' )
 
     #path to starcluster exe
     starcluster_bin = launcher_config['starcluster_bin']
     #url to page that returns cluster config template
     base_sc_config_url = launcher_config['sc_config_url']
     sc_config_url = base_sc_config_url + '/' + worker_id
-    worker_model = get_ANWorker( worker_id=worker_id )
+    worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
     master_name = worker_model['master_name']
     cluster_name = worker_model['cluster_name']
-    pid = multiprocessing.current_process()
+    pid = str(multiprocessing.current_process().pid)
     wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.STARTING,
             startup_pid=pid)
 
     base_message = {
                         'cluster_name': cluster_name,
                         'master_name': master_name,
-                        'pid':str(pid)
+                        'pid': pid
                     }
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
-    sc_command = "%s -c %s/%s/%s start -c %s %s" % (
+    sc_command = "%s -c %s start -c %s %s" % (
             os.path.expanduser(starcluster_bin),
             sc_config_url,
-            master_name, cluster_name, cluster_name, cluster_name)
+            cluster_name, 
+            cluster_name)
+    print sc_command
     base_message['command'] = sc_command
     sc_p = subprocess.Popen( sc_command, 
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
