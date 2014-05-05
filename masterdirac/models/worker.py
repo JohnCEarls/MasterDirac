@@ -15,6 +15,7 @@ STARTING = 10
 READY = 20
 RUNNING = 30
 MARKED_FOR_TERMINATION = 35
+TERMINATING = 37
 TERMINATED = 40
 
 active_statuses = [CONFIG, STARTING, READY, RUNNING, MARKED_FOR_TERMINATION]
@@ -51,6 +52,8 @@ def to_dict_ANW( item ):
     result = {}
     for key, value in item.attribute_values.iteritems():
         result[key] = value
+        if type(value) == set:
+            result[key] = list(value)
     return result
 
 def insert_ANWorker( master_name, cluster_name,
@@ -155,7 +158,7 @@ def confirm_worker_running( worker ):
     try:
         conn = boto.ec2.connect_to_region( worker['aws_region'] )
         for reservation in conn.get_all_reservations( 
-                                  instance_ids=worker['nodes'] ):
+                                  instance_ids=list(worker['nodes']) ):
             for inst in reservation.instances:
                 if inst.state == 'running':
                     return True

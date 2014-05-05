@@ -51,6 +51,7 @@ class ServerManager:
         self.aws_locations = {}
         self.gpu_ids = {}
         self.cluster_startup_processes = []
+        self.cluster_termination_processes = []
         self._master_name = master_name
         self._run_model = None
         self._local_settings = self._get_local_settings()
@@ -89,7 +90,8 @@ class ServerManager:
             self._handle_launcher( launch_mess )
 
     def poll_sc_logging( self, timeout=2):
-        messages = self.sc_logging_q.get_messages(wait_time_seconds= timeout)
+        messages = self.sc_logging_q.get_messages(num_messages=10,
+                wait_time_seconds= timeout)
         for mess in messages:
             sc_logging_mess = json.loads( mess.get_body() )
             self.sc_logging_q.delete_message( mess )
@@ -307,6 +309,24 @@ class ServerManager:
     def _handle_sc_logging(self, mess ):
         self.logger.info("%r" % mess)
 
+    def activate_server(self, worker_id):
+        worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+        if worker_model['status'] != wkr_mdl.READY:
+            self.logger.error(( 'Attempted to startup [%s]'
+                ' and status is wrong [%r]') % (worker_id, worker_model))
+            raise Exception(('Attempted to startup [%s] and'
+                ' it is not in a CONFIG stat') % (worker_id) )
+        if worker_model['type'] == "Dual GPU":
+            start_process = multiprocessing.Process( target = start_gpu,
+                args=( worker_id, ),
+                name=worker_id)
+            start_process.start()
+        else:
+            raise Exception('Data start unimplemented')
+
+
+
+
     def launch_cluster(self, worker_id ):
         """
         Given a worker id, prepare environment and start cluster.
@@ -331,6 +351,22 @@ class ServerManager:
         self.logger.info( 'started startup process for [%s]' % (worker_id,) )
         self.cluster_startup_processes.append( startup_process )
 
+    def terminate_cluster(self, worker_id ):
+        """
+        Given a worker id, prepare environment and start cluster.
+        """
+        worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+        if wkr_mdl.confirm_worker_running( worker_model ):
+            startup_process = multiprocessing.Process( target = terminate_sc,
+                    args=( worker_id, ),
+                    name=worker_id)
+            startup_process.start()
+            self.logger.info( 'started termination process for [%s]' % (worker_id,) )
+            self.cluster_termination_processes.append( startup_process )
+        else:
+            self.logger.info('Cluster is not running, mark with error')
+            wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.TERMINATED_WITH_ERROR)
+
     def _handle_launcher( self, launch_mess):
         """
         Handles requests from web server
@@ -343,6 +379,18 @@ class ServerManager:
                     launch_mess))
                 self.logger.error( "Abort launch")
                 self._abort_launch( launch_mess, e )
+        elif launch_mess['action'] == 'terminate':
+            try:
+                self.terminate_cluster( launch_mess['worker_id'] )
+            except Exception as e:
+                self.logger.exception( "Attempt to terminate cluster failed [%r]" % (
+                    launch_mess))
+                self.logger.error( "Abort termination")
+                self._abort_launch( launch_mess, e )
+        else:
+            self.logger.error("Unhandled Launcher Message")
+            self.logger.error("%r" % launch_mess )
+            self._abort_launch(launch_mess, "Launcher message unrecognized")
 
     def _abort_launch( self, launch_mess, except_obj ):
         """
@@ -694,17 +742,24 @@ def log_subprocess_messages( sc_p, q, base_message):
         acc['i'] =acc['i'] + 1
 
     send_msg('system', 'Starting')
-
     cont = True
     reads = (sc_p.stdout, sc_p.stderr)
     while cont:
+        cont = sc_p.poll() is None
         ret = select.select(reads, [], [])
         for fd in ret[0]:
-            if fd == sc_p.stdout.fileno():
+            if fd.fileno() == sc_p.stdout.fileno():
                 send_msg('stdout', sc_p.stdout.readline().strip() )
-            if fd == sc_p.stderr.fileno():
+            if fd.fileno() == sc_p.stderr.fileno():
                 send_msg('stderr', sc_p.stderr.readline().strip() )
-        cont = sc_p.poll() is not None
+    line = sc_p.stdout.readline().strip() 
+    while line != '':
+        send_msg('stdout',line)
+        line = sc_p.stdout.readline().strip() 
+    line = sc_p.stderr.readline().strip()
+    while line != '':
+        send_msg('stderr', line)
+        line = sc_p.stderr.readline().strip()
     send_msg( 'system', 'Complete: returned[%i]' % cont )
     return cont
 
@@ -729,6 +784,7 @@ def run_sc( worker_id ):
             startup_pid=pid)
 
     base_message = {
+                        'worker_id' : worker_id,
                         'cluster_name': cluster_name,
                         'master_name': master_name,
                         'pid': pid
@@ -740,11 +796,163 @@ def run_sc( worker_id ):
             sc_config_url,
             cluster_name, 
             cluster_name)
-    print sc_command
     base_message['command'] = sc_command
     sc_p = subprocess.Popen( sc_command, 
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
     log_subprocess_messages( sc_p, q, base_message)
+    ec2 = boto.ec2.connect_to_region(worker_model['aws_region'])
+    instances = []
+    for group in ec2.get_all_security_groups(['@sc-%s' % cluster_name ] ):
+        instances += [inst.id for inst in group.instances()]
+    if len(instances) > 0:
+        wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY, 
+            num_nodes = len(instances), nodes= instances)
+    else:
+        wkr_mdl.update_ANWorker( worker_id, 
+                status=wkr_mdl.TERMINATED_WITH_ERROR )
+
+def terminate_sc( worker_id ):
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+            'Master' )
+    #path to starcluster exe
+    starcluster_bin = launcher_config['starcluster_bin']
+    #url to page that returns cluster config template
+    base_sc_config_url = launcher_config['sc_config_url']
+    sc_config_url = base_sc_config_url + '/' + worker_id
+    worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+    master_name = worker_model['master_name']
+    cluster_name = worker_model['cluster_name']
+    pid = str(multiprocessing.current_process().pid)
+    wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.TERMINATING)
+    base_message = {
+                        'worker_id' : worker_id,
+                        'cluster_name': cluster_name,
+                        'master_name': master_name,
+                        'pid': pid
+                    }
+    sqs =boto.sqs.connect_to_region("us-east-1")
+    q = sqs.create_queue(launcher_config['startup_logging_queue'])
+    sc_command = "%s -c %s terminate -f -c %s" % (
+            os.path.expanduser(starcluster_bin),
+            sc_config_url,
+            cluster_name)
+    base_message['command'] = sc_command
+    sc_p = subprocess.Popen( sc_command, 
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
+    log_subprocess_messages( sc_p, q, base_message)
+    ec2 = boto.ec2.connect_to_region(worker_model['aws_region'])
+    instances = []
+    try:
+        for group in ec2.get_all_security_groups(['@sc-%s' % cluster_name ] ):
+            instances += [inst.id for inst in group.instances() if instance.state != "running"]
+    except boto.exception.EC2ResponseError as e:
+        #termination successful if no security group
+        instances = []
+    if len(instances) == 0:
+        wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.TERMINATED)
+    else:
+        wkr_mdl.update_ANWorker( worker_id, 
+                status=wkr_mdl.TERMINATED_WITH_ERROR )
+def start_gpu( worker_id ):
+    gpu_logserver_daemon( worker_id, 'start')
+    gpu_daemon( worker_id, gpu_id=0, 'start')
+    gpu_daemon( worker_id, gpu_id=1, 'start')
+    wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.RUNNING)
+
+
+
+def gpu_logserver_daemon( worker_id, action='start'):
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+            'Master' )
+    #path to starcluster exe
+    starcluster_bin = launcher_config['starcluster_bin']
+    #url to page that returns cluster config template
+    base_sc_config_url = launcher_config['sc_config_url']
+    sc_config_url = base_sc_config_url + '/' + worker_id
+    worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+    master_name = worker_model['master_name']
+    cluster_name = worker_model['cluster_name']
+    valid_actions = ['start', 'stop', 'status']
+    assert action in valid_actions, "%s is not a valid action for gpu" % action
+    base_message = {
+                        'worker_id' : worker_id,
+                        'cluster_name': cluster_name,
+                        'master_name': master_name,
+                        'action':action,
+                        'component': 'gpu-logserver-daemon'
+                    }
+    sqs =boto.sqs.connect_to_region("us-east-1")
+    q = sqs.create_queue(launcher_config['startup_logging_queue'])
+    sc_command = "%s -c %s sshmaster -u sgeadmin  %s " % (
+            os.path.expanduser(starcluster_bin),
+            sc_config_url,
+            cluster_name)
+    if action == 'start':
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/logserver.sh start'"
+    if action == 'status':
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/logserver.sh status'" 
+    if action == 'stop':
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/logserver.sh stop'"
+    base_message['command'] = sc_command
+    sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
+    log_subprocess_messages( sc_p, q, base_message)
+
+def gpu_daemon( worker_id, gpu_id=0, action='start'):
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+            'Master' )
+    base_sc_config_url = launcher_config['sc_config_url']
+    sc_config_url = base_sc_config_url + '/' + worker_id
+    worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+    master_name = worker_model['master_name']
+    cluster_name = worker_model['cluster_name']
+    valid_actions = ['start', 'stop', 'status']
+    assert action in valid_actions, "%s is not a valid action for gpu" % action
+    base_message = {
+                        'worker_id' : worker_id,
+                        'cluster_name': cluster_name,
+                        'master_name': master_name,
+                        'gpu_id':str(gpu_id), 
+                        'action':action, 
+                        'component':'gpuserver-daemon' }
+    sqs =boto.sqs.connect_to_region("us-east-1")
+    q = sqs.create_queue(launcher_config['startup_logging_queue'])
+    sc_command = "%s -c %s sshmaster -u sgeadmin  %s " % (
+            os.path.expanduser(starcluster_bin),
+            sc_config_url,
+            cluster_name)
+    if action == 'start':
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh start'" % gpu_id
+    if action == 'status':
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh status'" % gpu_id
+    if action == 'stop':
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh stop'" % gpu_id
+    base_message['command'] = sc_command
+    sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
+    log_subprocess_messages( sc_p, q, base_message)
+
+
+def cluster_restart( worker_id ):
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+            'Master' )
+    base_sc_config_url = launcher_config['sc_config_url']
+    sc_config_url = base_sc_config_url + '/' + worker_id
+    worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+    master_name = worker_model['master_name']
+    cluster_name = worker_model['cluster_name']
+    base_message = {'worker_id' : worker_id,
+            'cluster_name': cluster_name, 
+            'master_name': master_name, 
+            'component':'restart'} 
+    sqs =boto.sqs.connect_to_region("us-east-1")
+    q = sqs.create_queue(launcher_config['startup_logging_queue'])
+    sc_command = "%s -c %s sshmaster -u sgeadmin  %s " % (
+            os.path.expanduser(starcluster_bin),
+            sc_config_url,
+            cluster_name)
+    base_message['command'] = sc_command
+    sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
+    log_subprocess_messages( sc_p, q, base_message)
+
 
 if __name__ == "__main__":
     si = ServerInterface({'name':'test', 'command':'test',
