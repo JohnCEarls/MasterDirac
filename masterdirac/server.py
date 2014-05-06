@@ -27,9 +27,9 @@ def main():
         #handle any available runs
         manager.manage_run()
         #check for requests to launch servers
-        manager.poll_launch_requests( timeout=5 )
+        manager.poll_launch_requests( timeout=2 )
         #check for requests from cluster to join the party
-        manager.poll_for_server( timeout=5)
+        manager.poll_for_server( timeout=2)
         #housekeeping, this is largely unimplemented
         terminate = manager.introspect()
     master_mdl.insert_master( manager.master_model['master_name'], 

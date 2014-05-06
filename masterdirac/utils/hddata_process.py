@@ -34,7 +34,7 @@ def get_from_s3( source_bucket, data, meta_data, annotation_data, syn_file, agil
     file_list = [data,meta_data,annotation_data, syn_file, agilent_file]
     local_file_list = []
     for f in file_list:
-        fname = os.path.split(f)[-1]
+        s3_path, fname = os.path.split(f)
         local_path = os.path.join(data_dir, fname)
         exists = os.path.exists(local_path)
         local_file_list.append(local_path)
@@ -44,13 +44,13 @@ def get_from_s3( source_bucket, data, meta_data, annotation_data, syn_file, agil
             if force_write:
                 logger.info('force_writ on')
         try:
-            logger.info( "Transferring s3://%s/%s to %s" % (source_bucket,fname, local_path ))
+            logger.info( "Transferring s3://%s/%s to %s" % (source_bucket,f, local_path ))
             k = Key(b)
-            k.key = fname
+            k.key = f #fname
             k.get_contents_to_filename(local_path)
             logger.info("Transfer complete")
         except S3ResponseError as sre:
-            logger.error("bucket:[%s] file:[%s] upload." % (source_bucket,fname))
+            logger.error("bucket:[%s] file:[%s] download." % (source_bucket,f))
             logger.error(str(sre))
             raise(sre)
     logger.info("Complete")
@@ -81,6 +81,8 @@ class HDDataGen:
 
     def generate_dataframe(self, data_file, annotations_file,
             agilent_file, synonym_file, network_table, source_id ):
+        (data_file, annotations_file, agilent_file, synonym_file) = self.strip_s3_path(
+         (data_file, annotations_file, agilent_file, synonym_file) )
         self.logger.debug("Getting base data table")
         data_orig = self._get_data( data_file, annotations_file )
         self.logger.debug("Mapping probes to genes")
@@ -101,6 +103,13 @@ class HDDataGen:
             new_df.ix[k] = data_orig.ix[probes].median()
         nm_size = self._estimate_net_map( ng2pm )
         return new_df, nm_size
+
+    def strip_s3_path(self, files):
+        """
+        Given a full s3_path return the filename
+        """
+        return tuple([os.path.split( f )[-1] for f in files])
+        
 
     def _get_probe_mapping(self, agilent_file):
         """

@@ -62,10 +62,6 @@ class ServerManager:
 
     def manage_run( self ):
         logger = self.logger
-        logger.info("Getting work")
-        #work = get_work( config, perm = False )
-        logger.info("Creating Server Manager")
-        logger.info("Adding work to self")
         active_run = self.get_run()
         if active_run and self.status != master_mdl.RUN:
             self.status = master_mdl.RUN
@@ -76,7 +72,7 @@ class ServerManager:
                 self._add_work( self.get_work( perm=True ) )
         if self.has_work():
             self.send_run()
-        logger.info("Exiting manage_run")
+        logger.debug("Exiting manage_run")
 
     def poll_launch_requests( self, timeout=20 ):
         """
@@ -92,10 +88,14 @@ class ServerManager:
     def poll_sc_logging( self, timeout=2):
         messages = self.sc_logging_q.get_messages(num_messages=10,
                 wait_time_seconds= timeout)
+        r = False
         for mess in messages:
+            r = True
             sc_logging_mess = json.loads( mess.get_body() )
             self.sc_logging_q.delete_message( mess )
             self._handle_sc_logging( sc_logging_mess )
+        if r:
+            self.poll_sc_logging(1)
 
     def poll_for_server(self, timeout=20):
         """
@@ -136,7 +136,7 @@ class ServerManager:
             if active_run is not None:
                 logger.info("Have run")
                 return active_run
-        logger.info("No run found")
+        logger.debug("No run found")
         return None
 
     def get_work( self, perm=True ):
@@ -312,18 +312,57 @@ class ServerManager:
     def activate_server(self, worker_id):
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
         if worker_model['status'] != wkr_mdl.READY:
-            self.logger.error(( 'Attempted to startup [%s]'
+            self.logger.error(( 'Attempted to start server[%s]'
                 ' and status is wrong [%r]') % (worker_id, worker_model))
-            raise Exception(('Attempted to startup [%s] and'
-                ' it is not in a CONFIG stat') % (worker_id) )
-        if worker_model['type'] == "Dual GPU":
+            raise Exception(('Attempted to start server[%s] and'
+                ' it is not in a READY stat') % (worker_id) )
+        if worker_model['cluster_type'] == "Dual GPU":
             start_process = multiprocessing.Process( target = start_gpu,
                 args=( worker_id, ),
                 name=worker_id)
             start_process.start()
+        elif worker_model['cluster_type'] == "Data Cluster":
+            start_process = multiprocessing.Process( target = start_data,
+                args=( worker_id, ),
+                name=worker_id)
+            start_process.start()
         else:
-            raise Exception('Data start unimplemented')
+            raise Exception('unimplemented')
 
+    def stop_server(self, worker_id ):
+        worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+        if worker_model['status'] != wkr_mdl.RUNNING:
+            self.logger.error(( 'Attempted to startup [%s]'
+                ' and status is wrong [%r]') % (worker_id, worker_model))
+            raise Exception(('Attempted to stop server [%s] and'
+                ' it is not in a RUNNING stat') % (worker_id) )
+        if worker_model['cluster_type'] == "Dual GPU":
+            stop_process = multiprocessing.Process( target = stop_gpu,
+                args=( worker_id, ),
+                name=worker_id)
+            stop_process.start()
+        elif worker_model['cluster_type'] == "Data Cluster":
+            stop_process = multiprocessing.Process( target = stop_data,
+                args=( worker_id, ),
+                name=worker_id)
+            stop_process.start()
+        else:
+            raise Exception('unimplemented')
+
+    def status_server(self,  worker_id ):
+        worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+        if worker_model['cluster_type'] == "Dual GPU":
+            status_process = multiprocessing.Process( target = status_gpu,
+                args=( worker_id, ),
+                name=worker_id)
+            status_process.start()
+        elif worker_model['cluster_type'] == "Data Cluster":
+            status_process = multiprocessing.Process( target = status_data,
+                args=( worker_id, ),
+                name=worker_id)
+            status_process.start()
+        else:
+            raise Exception('unimplemented')
 
 
 
@@ -378,6 +417,30 @@ class ServerManager:
                 self.logger.exception( "Attempt to launch cluster failed [%r]" % (
                     launch_mess))
                 self.logger.error( "Abort launch")
+                self._abort_launch( launch_mess, e )
+        elif launch_mess['action'] == 'activate-server':
+            try:
+                self.activate_server( launch_mess['worker_id'] )
+            except Exception as e:
+                self.logger.exception( "Attempt to Activate server failed [%r]" % (
+                    launch_mess))
+                self.logger.error( "Abort activation")
+                self._abort_launch( launch_mess, e )
+        elif launch_mess['action'] == 'stop-server':
+            try:
+                self.stop_server( launch_mess['worker_id'] )
+            except Exception as e:
+                self.logger.exception( "Attempt to stop server failed [%r]" % (
+                    launch_mess))
+                self.logger.error( "Abort termination")
+                self._abort_launch( launch_mess, e )
+        elif launch_mess['action'] == 'status-server':
+            try:
+                self.status_server( launch_mess['worker_id'] )
+            except Exception as e:
+                self.logger.exception( "Attempt to status server failed [%r]" % (
+                    launch_mess))
+                self.logger.error( "Abort termination")
                 self._abort_launch( launch_mess, e )
         elif launch_mess['action'] == 'terminate':
             try:
@@ -853,15 +916,51 @@ def terminate_sc( worker_id ):
     else:
         wkr_mdl.update_ANWorker( worker_id, 
                 status=wkr_mdl.TERMINATED_WITH_ERROR )
+
 def start_gpu( worker_id ):
-    gpu_logserver_daemon( worker_id, 'start')
-    gpu_daemon( worker_id, gpu_id=0, 'start')
-    gpu_daemon( worker_id, gpu_id=1, 'start')
+    """
+    The entry subprocess for starting a dual gpu cluster
+    """
+    gpu_logserver_daemon( worker_id, action = 'start')
+    gpu_daemon( worker_id, gpu_id=0, action = 'start')
+    gpu_daemon( worker_id, gpu_id=1, action = 'start')
     wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.RUNNING)
 
 
 
+def stop_gpu( worker_id ):
+    """
+    The entry subprocess for starting a dual gpu cluster
+    """
+    gpu_logserver_daemon( worker_id, action = 'stop')
+    gpu_daemon( worker_id, gpu_id=0, action = 'stop')
+    gpu_daemon( worker_id, gpu_id=1, action = 'stop')
+    wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY)
+
+def status_gpu( worker_id ):
+    """
+    The entry subprocess for starting a dual gpu cluster
+    """
+    gpu_logserver_daemon( worker_id, action = 'status')
+    gpu_daemon( worker_id, gpu_id=0, action = 'status')
+    gpu_daemon( worker_id, gpu_id=1, action = 'status')
+
+def start_data( worker_id ):
+    data_daemon( worker_id, action="start")
+    wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.RUNNING)
+
+def status_data( worker_id ):
+    data_daemon( worker_id, action="status")
+
+def stop_data( worker_id ):
+    data_daemon( worker_id, action="stop")
+    wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY)
+
+
 def gpu_logserver_daemon( worker_id, action='start'):
+    """
+    Manages interactions with gpu logserver
+    """
     launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
             'Master' )
     #path to starcluster exe
@@ -900,6 +999,7 @@ def gpu_logserver_daemon( worker_id, action='start'):
 def gpu_daemon( worker_id, gpu_id=0, action='start'):
     launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
             'Master' )
+    starcluster_bin = launcher_config['starcluster_bin']
     base_sc_config_url = launcher_config['sc_config_url']
     sc_config_url = base_sc_config_url + '/' + worker_id
     worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
@@ -930,6 +1030,40 @@ def gpu_daemon( worker_id, gpu_id=0, action='start'):
     sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
     log_subprocess_messages( sc_p, q, base_message)
 
+def data_daemon( worker_id, action="start"):
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+            'Master' )
+    starcluster_bin = launcher_config['starcluster_bin']
+    base_sc_config_url = launcher_config['sc_config_url']
+    sc_config_url = base_sc_config_url + '/' + worker_id
+    worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
+    master_name = worker_model['master_name']
+    cluster_name = worker_model['cluster_name']
+    valid_actions = ['start', 'stop', 'status']
+    assert action in valid_actions, "%s is not a valid action for data" % action
+    base_message = {
+                        'worker_id' : worker_id,
+                        'cluster_name': cluster_name,
+                        'master_name': master_name,
+                        'action':action, 
+                        'component':'dataserver-daemon' }
+    sqs =boto.sqs.connect_to_region("us-east-1")
+    q = sqs.create_queue(launcher_config['startup_logging_queue'])
+    sc_command = "%s -c %s sshmaster -u sgeadmin  %s " % (
+            os.path.expanduser(starcluster_bin),
+            sc_config_url,
+            cluster_name)
+    if action == 'start':
+        sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh start'"
+    if action == 'status':
+        sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh status'"
+    if action == 'stop':
+        sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh stop'"
+    base_message['command'] = sc_command
+    print sc_command
+    sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
+    log_subprocess_messages( sc_p, q, base_message)
+
 
 def cluster_restart( worker_id ):
     launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
@@ -945,7 +1079,7 @@ def cluster_restart( worker_id ):
             'component':'restart'} 
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
-    sc_command = "%s -c %s sshmaster -u sgeadmin  %s " % (
+    sc_command = "%s -c %s restart %s " % (
             os.path.expanduser(starcluster_bin),
             sc_config_url,
             cluster_name)
