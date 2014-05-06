@@ -26,7 +26,7 @@ def main():
     while not terminate:
         #handle any available runs
         manager.manage_run()
-        #check for requests to launch servers
+        #check for requests from web to manage servers
         manager.poll_launch_requests( timeout=2 )
         #check for requests from cluster to join the party
         manager.poll_for_server( timeout=2)

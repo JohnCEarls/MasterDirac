@@ -329,6 +329,22 @@ class ServerManager:
         else:
             raise Exception('unimplemented')
 
+
+    def activate_run(self, run_id):
+        run_model = run_mdl.get_ANRun( run_id = run_id )
+        if run_model['status'] != run_mdl.CONFIG:
+            self.logger.error(( 'Attempted to start run %s]'
+                ' and status is wrong [%r]') % (run_id, run_model))
+            raise Exception(('Attempted to start run[%s] and'
+                ' it is not in a CONFIG stat') % (run_id) )
+        if self.status !=  master_mdl.INIT:
+            self.logger.error(( 'Attempted to start run %s and master status'
+                'is not INIT - current status[%i] ') % ( run_id, self.status ))
+            raise Exception(( 'Attempted to start run %s and master status'
+                'is not INIT - current status[%i] ') % ( run_id, self.status ))
+        run_mdl.insert_ANRun( run_id, status=run_mdl.ACTIVE )
+
+
     def stop_server(self, worker_id ):
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
         if worker_model['status'] != wkr_mdl.RUNNING:
@@ -450,6 +466,19 @@ class ServerManager:
                     launch_mess))
                 self.logger.error( "Abort termination")
                 self._abort_launch( launch_mess, e )
+        elif launch_mess['action'] == 'activate-run':
+            try:
+                self.activate_run( launch_mess['run_id'] )
+                mess = { 'status' : 'complete',
+                        'data' : launch_mess,
+                        'message': 'Activating run_id:%s' % launch_mess['run_id']}
+                self.launcher_q_out.write( Message( body=json.dumps( mess ) ) )
+            except Exception as e:
+                self.logger.exception( "Attempt to terminate cluster failed [%r]" % (
+                    launch_mess))
+                self.logger.error( "Abort termination")
+                self._abort_launch( launch_mess, e )
+
         else:
             self.logger.error("Unhandled Launcher Message")
             self.logger.error("%r" % launch_mess )
