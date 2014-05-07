@@ -678,6 +678,7 @@ class ServerManager:
                     launcher_config['launcher_sqs_out'],
                     launcher_config['startup_logging_queue']
                     ]
+        self.logger.debug("init queue names %r " % q_list )
         for q_name in q_list:
             if q_name:#cheap hack, keep getting a None queue
                 q = conn.create_queue( q_name )
