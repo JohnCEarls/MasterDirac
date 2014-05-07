@@ -44,8 +44,7 @@ def get_active_master( ):
             if confirm_master_active( master ):
                 return master
             else:
-                master['status'] = TERMINATED_WITH_ERROR
-                insert_master( **master )
+                update_master( master['master_name'], status= TERMINATED_WITH_ERROR)
     return None
 
 def handle_inconsistent_masters():
@@ -58,8 +57,7 @@ def _handle_inconsistent_master( master):
         logger.error(("Master server with inconsistent status [%r]"
             ) % ( master ))
         try:
-            master['status'] = TERMINATED_WITH_ERROR
-            insert_master( **master )
+            update_master( master['master_name'], status= TERMINATED_WITH_ERROR)
             logger.error( ("Master server [%s] status changed"
                 " to TERMINATED_WITH_ERROR") % ( master['master_name'] ) )
         except:
@@ -100,6 +98,28 @@ def get_master( master_name=None):
         except ANMaster.DoesNotExist as dne:
             return {}
 
+def update_master( master_name, 
+        aws_region=None,
+        key_pairs=None,
+        instance_id = None,
+        comm_queue = None,
+        status = None,
+        **kwargs):
+
+    item = ANMaster.get( master_name )
+    if aws_region is not None:
+        item.aws_region = aws_region
+    if key_pairs is not None:
+        item.key_pairs = key_pairs
+    if instance_id is not None:
+        item.instance_id = instance_id
+    if comm_queue is not None:
+        item.comm_queue = comm_queue
+    if status is not None:
+        item.status = status
+    item.save()
+    return to_dict( item )
+
 def insert_master( master_name, 
         aws_region=None,
         key_pairs=None,
@@ -107,6 +127,7 @@ def insert_master( master_name,
         comm_queue = None,
         status = None,
         **kwargs):
+
     item = ANMaster( master_name )
     if aws_region is not None:
         item.aws_region = aws_region

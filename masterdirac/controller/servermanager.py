@@ -541,7 +541,7 @@ class ServerManager:
         os.chmod( key_path, 0600 )
         self._master_model['key_pairs'][aws_region] = key_name
         self.logger.info("Updating master model")
-        master_mdl.insert_master( self._master_model['master_name'],
+        master_mdl.update_master( self.master_model['master_name'],
                 key_pairs = self.master_model['key_pairs'])
         return ( key_name, key_path )
 
@@ -614,7 +614,7 @@ class ServerManager:
     def master_model( self, value ):
         for k,v in value.iteritems():
             self._master_model[k] = v
-        self._master_model = master_mdl.insert_master( **self._master_model )
+        self._master_model = master_mdl.update_master( **self._master_model )
 
     @property
     def init_q(self):

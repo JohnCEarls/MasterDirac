@@ -32,5 +32,5 @@ def main():
         manager.poll_for_server( timeout=2)
         #housekeeping, this is largely unimplemented
         terminate = manager.introspect()
-    master_mdl.insert_master( manager.master_model['master_name'], 
+    master_mdl.update_master( manager.master_model['master_name'], 
             status = master_mdl.TERMINATED )
