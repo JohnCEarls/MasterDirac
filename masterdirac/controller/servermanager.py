@@ -663,7 +663,7 @@ class ServerManager:
         while not lq:
             time.sleep(max(ctr,60))
             self.logger.warning("Creating Server Initialization Queue")
-            lq = conn.create_queue(self._launcher_model['launcher_sqs_out'])
+            lq = conn.create_queue(self._launcher_model['startup_logging_queue'])
             ctr = 1.25 *ctr + 1
         return lq
 
@@ -679,10 +679,11 @@ class ServerManager:
                     launcher_config['startup_logging_queue']
                     ]
         for q_name in q_list:
-            q = conn.create_queue( q_name )
-            if not q:
-                logger.error("%s not created" % q_name)
-                raise Exception("Unable to initialize %s" % q_name)
+            if q_name:#cheap hack, keep getting a None queue
+                q = conn.create_queue( q_name )
+                if not q:
+                    logger.error("%s not created" % q_name)
+                    raise Exception("Unable to initialize %s" % q_name)
 
     def _get_master_model( self ):
         master_model = master_mdl.get_master( self._master_name )
