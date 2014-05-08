@@ -29,6 +29,47 @@ class ANRun(Model):
     date_created = UTCDateTimeAttribute( default = datetime.utcnow() )
     status = NumberAttribute(default=CONFIG)
 
+def update_ANRun( run_id, 
+        master_name=None, 
+        workers=None, 
+        source_data=None,
+        dest_data= None,
+        description=None, 
+        network_config=None, 
+        run_settings=None,
+        intercomm_settings=None, 
+        aggregator_settings=None,
+        status=None,
+        data_sizes=None
+    ):
+    item = ANRun.get( run_id )
+    if master_name is not None:
+        item.master_name = master_name
+    if workers is not None:
+        item.workers = workers
+    if source_data is not None:
+        item.source_data = source_data
+    if dest_data is not None:
+        item.dest_data = dest_data
+    if description is not None:
+        item.description = description
+    if network_config is not None:
+        item.network_config = network_config
+    if run_settings is not None:
+        item.run_settings = run_settings
+    if intercomm_settings is not None:
+        item.intercomm_settings = intercomm_settings
+    if aggregator_settings is not None:
+        item.aggregator_settings = aggregator_settings
+    if status is not None:
+        item.status = status
+    if data_sizes is not None:
+        if type(data_sizes) is tuple:
+            data_sizes = json.dumps( data_sizes )
+        item.data_sizes = data_sizes
+    item.save()
+    return to_dict(item)
+
 def insert_ANRun( run_id, 
         master_name=None, 
         workers=None, 

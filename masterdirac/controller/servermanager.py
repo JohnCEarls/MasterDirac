@@ -66,7 +66,13 @@ class ServerManager:
         if active_run and self.status != master_mdl.RUN:
             self.status = master_mdl.RUN
         if active_run is not None:
-            self._configure_run( active_run )
+            try:
+                self._configure_run( active_run )
+            except:
+                self.logger.exception("Attempt to configure [%r] failed" % (
+                    active_run))
+                self.status = master_mdl.INIT
+                return
             if not self.has_work():
                 self._add_work( self.get_work( perm=False ) )
                 self._add_work( self.get_work( perm=True ) )
@@ -151,7 +157,7 @@ class ServerManager:
         run_settings = run_model['run_settings']
         md = datadirac.data.MetaInfo( os.path.join(
             local_config[ 'working_dir' ],
-            source_data[ 'meta_file' ] ) )
+            self._s3_strip(source_data[ 'meta_file' ]) ) )
         p = run_settings[ 'permutations' ]
         k = run_settings[ 'k' ]
         strains = md.get_strains()
@@ -167,7 +173,7 @@ class ServerManager:
         logger.info('Adding metadata for this run')
         conn = boto.dynamodb2.connect_to_region( 'us-east-1' )
         run_meta_table = run_settings[ 'run_meta_table' ]
-        run_id = run_model['run_id']
+        run_id = self._run_model['run_id']
         #TODO: put this in a model
         table = Table( run_meta_table, connection = conn )
         if table.query_count( run_id__eq=run_id ) == 0:
@@ -200,8 +206,16 @@ class ServerManager:
 
 
     def _configure_run( self, run_model):
+        self.logger.debug( "Configuring Run [%r]" % run_model)
         self._run_model = run_model
-        if self.data_is_initialized():
+        if not self.source_data_exists():
+            run_mdl.update_ANRun(self._run_model['run_id'],
+                    status=run_mdl.ABORT )
+            self._run_model = None
+            self.logger.error( "Source Data for run is not where expected")
+            raise Exception("Run Aborted %r" % run_model)
+        if not self.data_is_initialized() or not self.dest_data_exists():
+            self.logger.info("Initializing data")
             self.init_data()
         self.logger.debug("Loading Configs")
         self._load_run_config()
@@ -225,6 +239,7 @@ class ServerManager:
 
     def has_work(self):
         return len(self.work) > 0
+
     def send_run( self ):
         """
         Sends chunks of work from the work queue
@@ -249,50 +264,130 @@ class ServerManager:
     def init_data(self ):
         """
         Grabs data sources from s3, creates the dataframe needed
-        by the system and moves it to another s3 bucket
+        by the system and moves it to another s3 bucket, along
+        with metadata
+        """
+        self.logger.info("Getting source data")
+        self._get_source_data()
+        self.logger.info("Generating dataframe")
+        self._generate_dataframe()
+        self.logger.info("Copying metadata to working bucket")
+        self._copy_metadata_file()
+
+    def _generate_dataframe( self ):
+        """
+        Takes source data and generates destination data
         """
         run_model = self._run_model
         local_config = self._local_settings
         source_data = run_model['source_data']
-        dest_data = run_model['dest_data']
         network_config = run_model['network_config']
-        args = ( source_data[ 'bucket'],
-                source_data[ 'data_file'],
-                source_data[ 'meta_file'],
-                source_data[ 'annotations_file'],
-                source_data[ 'synonym_file'],
-                source_data[ 'agilent_file'],
-                local_config['working_dir'] )
-        logger = self.logger
-        logger.info("Getting source data")
-        hddata_process.get_from_s3( *args )
-        logger.info("Generating dataframe")
-        hddg = hddata_process.HDDataGen( local_config['working_dir'] )
-        df,net_est = hddg.generate_dataframe( source_data[ 'data_file'],
-                                    source_data[ 'annotations_file'],
-                                    source_data[ 'agilent_file'],
-                                    source_data[ 'synonym_file'],
-                                    network_config[ 'network_table'],
-                                    network_config[ 'network_source'])
-        logger.info("Sending dataframe to s3://%s/%s" % (
-            dest_data[ 'working_bucket'],
-            dest_data[ 'dataframe_file'] ) )
-        hddg.write_to_s3( dest_data[ 'working_bucket'],
-                df, dest_data[ 'dataframe_file'] )
+        dest_data = run_model['dest_data']
+        self.logger.info("Getting source data")
+        self.logger.info("Generating dataframe")
+        hddg = hddata_process.HDDataGen( self._local_settings['working_dir'] )
+        df,net_est = hddg.generate_dataframe( source_data, network_config )
+        #put datasize upper bound in run_model
+        self._save_data_sizes( df, net_est )
+        #writes the dataframe to the working bucket
+        hddg.write_to_s3( df, dest_data )
+
+    def _copy_metadata_file(self):
+        """
+        S3 to S3 copy of metadata file
+        """
+        source_data = self._run_model['source_data']
+        dest_data = self._run_model['dest_data']
         conn = boto.connect_s3()
         source = conn.get_bucket( source_data['bucket'] )
         k = Key(source)
         k.key = source_data['meta_file']
-        k.copy( dest_data[ 'working_bucket' ], k.name )
-        logger.info("Sending metadata file to s3://%s/%s" % (
+        k.copy( dest_data[ 'working_bucket' ], dest_data['meta_file'] )
+        self.logger.info("Sending metadata file to s3://%s/%s" % (
                         dest_data[ 'working_bucket' ], k.name ))
+
+    def _s3_strip(self, key_name):
+        return os.path.split(key_name)[-1]
+
+    def _get_source_data( self):
+        """
+        Downloads the data from s3 to the local machine for processing
+        """
+        run_model = self._run_model
+        local_config = self._local_settings
+        sd = run_model['source_data']
+        #grab filenames we are interested in
+        file_list = [f for  k, f  in sd.iteritems() if k[:-4] == 'file']
+        conn = boto.connect_s3()
+        bucket = conn.get_bucket( sd['bucket'] )
+        for key_name in file_list:
+            s3_path, fname = os.path.split(key_name)
+            local_path = os.path.join(self._local_settings['working_dir'], fname)
+            try:
+                self.logger.info( "Transferring s3://%s/%s to %s" % (source_bucket,f, local_path ))
+                k = Key(bucket)
+                k.key = f #fname
+                k.get_contents_to_filename(local_path)
+                self.logger.info("Transfer complete")
+            except S3ResponseError as sre:
+                self.logger.error("bucket:[%s] file:[%s] download." % (source_bucket,f))
+                self.logger.error(str(sre))
+                raise(sre)
+        self.logger.info("Complete")
+
+    def _save_data_sizes( self, df, net_est):
+        """
+        Using the generated data frame, we save an upper bound on the
+        size of the matrices that will be generated in the run_model
+        """
         max_nsamples = len(df.columns)
         max_ngenes = len(df.index)
         max_nnets = len(net_est)
         max_comp = sum([x*(x-1)/2 for x in net_est])
-        logger.debug( "UB on dims4 samp[%i], gen[%i],nets[%i], comp[%s]" % (
-                    max_nsamples, max_ngenes, max_nnets, max_comp) )
-        return (max_nsamples, max_ngenes, max_nnets, max_comp)
+        self.logger.debug(( "Upper Bound on matrix dims " 
+            "samp[%i], gen[%i],nets[%i], comp[%s]") % (
+                max_nsamples, max_ngenes, max_nnets, max_comp) )
+        data_sizes = (max_nsamples, max_ngenes, max_nnets, max_comp)
+        self._run_model = run_mdl.update_ANRun( self._run_model['run_id'], 
+                    data_sizes=data_sizes )
+
+    def source_data_exists( self ):
+        """
+        Check that the files we expect to be in source exist
+        """
+        source_data = self._run_model['source_data']
+        source_keys = [  
+                        source_data[ 'data_file'],
+                        source_data[ 'meta_file'],
+                        source_data[ 'annotations_file'],
+                        source_data[ 'synonym_file'],
+                        source_data[ 'agilent_file']
+                    ]
+        conn = boto.connect_s3()
+        source_bucket = conn.get_bucket( source_data['bucket'] )
+        for key in source_keys:
+            if not source_bucket.get_key( key , validate=True):
+                return False
+        return True
+
+    def dest_data_exists( self ):
+        """
+        Checks if the pre-processed data( data for data nodes )
+        is in the working bucket
+        """
+        dest_data = self._run_model[ 'dest_data' ]
+        conn = boto.connect_s3()
+        dest_bucket = conn.get_bucket( dest_data['working_bucket'] )
+        dest_keys = [ dest_data['working_bucket'], dest_data['meta_file'],
+                dest_data['dataframe_file'] ]
+        for key in dest_keys:
+            if not dest_bucket.get_key( key , validate=True):
+                return False
+        return True
+
+
+
+
 
     def _handle_server_init( self, message ):
         self.logger.debug("Handling message %s" % json.dumps( message ) )
@@ -342,7 +437,8 @@ class ServerManager:
                 'is not INIT - current status[%i] ') % ( run_id, self.status ))
             raise Exception(( 'Attempted to start run %s and master status'
                 'is not INIT - current status[%i] ') % ( run_id, self.status ))
-        run_mdl.insert_ANRun( run_id, status=run_mdl.ACTIVE )
+        run_mdl.update_ANRun( run_id, status=run_mdl.INIT, 
+                master_name=self.master_model['master_name'] )
 
 
     def stop_server(self, worker_id ):
@@ -426,6 +522,7 @@ class ServerManager:
         """
         Handles requests from web server
         """
+        self.logger.debug( "Launcher request %r" %  launch_mess )
         if launch_mess['action'] == 'activate':
             try:
                 self.launch_cluster( launch_mess['worker_id'] )

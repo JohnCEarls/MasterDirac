@@ -22,6 +22,10 @@ def get_from_s3( source_bucket, data, meta_data, annotation_data, syn_file, agil
     If force_write is True, it downloads and overwrites the current file.
     returns the local location of data, meta_data, annotation_data
     """
+    raise Exception("Deprecated")
+    #not sure this is still being used
+    #has been removed from servermanager
+    #see if i
     logger = logging.getLogger("get_from_s3")
     logger.info("Running: getFromS3('%s','%s','%s','%s','%s',%s)"%( source_bucket, data, meta_data, annotation_data, data_dir, str(force_write) ))
     #check that data dir exists, if not create it
@@ -79,8 +83,12 @@ class HDDataGen:
         data_orig.index = annot['ProbeName']
         return self._drop_controls( data_orig, annotations_file )
 
-    def generate_dataframe(self, data_file, annotations_file,
-            agilent_file, synonym_file, network_table, source_id ):
+    def generate_dataframe(self, source_data, network_config ):
+        (data_file, annotations_file, agilent_file, synonym_file, network_table, 
+                source_id) =  (
+         source_data[ 'data_file'], source_data[ 'annotations_file'],
+         source_data[ 'agilent_file'],source_data[ 'synonym_file'],
+         network_config[ 'network_table'], network_config[ 'network_source'])
         (data_file, annotations_file, agilent_file, synonym_file) = self.strip_s3_path(
          (data_file, annotations_file, agilent_file, synonym_file) )
         self.logger.debug("Getting base data table")
@@ -185,12 +193,14 @@ class HDDataGen:
         data = data.drop(control_probes)
         return data
 
-    def write_to_s3( self, bucket_name, dataframe,  dataframe_name,
+    def write_to_s3( self, dataframe,  dest_data,
             location=Location.DEFAULT):
         """
         Writes the dataframe(cleaned and aggregated source data) and the
         metadata file to the given S3 bucket
         """
+        dataframe_name = dest_data['dataframe_file']
+        bucket_name = dest_data['working_bucket']
         self.logger.info("Sending cleaned dataframe to s3://%s/%s" % (
             bucket_name, dataframe_name) )
         conn = boto.connect_s3()
