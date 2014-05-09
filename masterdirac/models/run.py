@@ -3,6 +3,7 @@ from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
         NumberAttribute, UnicodeSetAttribute, JSONAttribute)
 from datetime import datetime
 import json
+import collections
 
 #STATUS_CODES
 CONFIG = -10
@@ -51,6 +52,29 @@ def batch_checkpoint( runs ):
                     for run in runs]
         for item in items:
             batch.save(item)
+
+def get_checkpoint( run_id ):
+    acc = collections.defaultdict(int)
+    for item in ANRunCheckpoint.query( run_id ):
+        acc[ item.strain ] += item.num_sent
+    return acc
+
+def compress_checkpoint( run_id ):
+    checkpoint = get_checkpoint(run_id)
+    cp = []
+    delete_checkpoint( run_id )
+    for strain, num_sent in checkpoint.items():
+        cp.append(pack_checkpoint( run_id, num_sent, strain=strain ))
+    batch_checkpoint( cp )
+
+def delete_checkpoint( run_id ):
+    with ANRunCheckpoint.batch_write() as batch:
+        for item in ANRunCheckpoint.query( run_id ):
+            batch.delete(item)
+
+    
+
+
 
 def update_ANRun( run_id, 
         master_name=None, 
@@ -188,6 +212,38 @@ def get_active_ANRun( run_id=None, master_id=None):
 def delete_ANRun( run_id ):
     item = ANRun.get( run_id )
     item.delete()
+
+def test_checkpoint():
+    try:
+        import random
+        assert len(get_checkpoint('nonexistent')) == 0, "Returning nonexistent records"
+        test_run_id = 'mytest-%i' % random.randint(0,100)
+        N = 100
+        M = 10
+        cp = []
+        strains =  ['strain1', 'strain2']
+        for i in range(N):
+            for strain in strains:
+                cp.append( pack_checkpoint( run_id=test_run_id, strain=strain, num_sent=M) )
+        batch_checkpoint( cp )
+        cp = get_checkpoint( test_run_id )
+        for a,b in zip(strains, strains):
+            assert cp[a] == cp[b]
+        assert cp[strains[0]] == M*N
+        compress_checkpoint( test_run_id )
+        cp2 = get_checkpoint( test_run_id )
+        for strain in strains:
+            assert cp[strain] == cp2[strain]
+        #cleanup
+        delete_checkpoint( test_run_id )
+        assert  len(get_checkpoint(test_run_id)) == 0, "Returning nonexistent records"
+    except AssertionError as ae:
+        print "Test failed[test_checkpoint]"
+        raise
+    print "Tests Passed[test_checkpoint]"
+
+
+
 
 if __name__ == "__main__":
     if not ANRun.exists():
