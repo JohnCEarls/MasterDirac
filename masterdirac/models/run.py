@@ -9,6 +9,7 @@ import collections
 CONFIG = -10
 INIT = 0
 ACTIVE = 10
+ACTIVE_ALL_SENT = 15
 COMPLETE = 20
 ABORT = 30
 
@@ -28,7 +29,7 @@ class ANRun(Model):
     aggregator_settings = JSONAttribute( default={} )
     data_sizes = UnicodeAttribute( default='' )
     date_created = UTCDateTimeAttribute( default = datetime.utcnow() )
-    status = NumberAttribute(default=CONFIG)
+    status = NumberAttribute( default=CONFIG )
 
 class ANRunCheckpoint(Model):
     class Meta:
@@ -72,10 +73,6 @@ def delete_checkpoint( run_id ):
         for item in ANRunCheckpoint.query( run_id ):
             batch.delete(item)
 
-    
-
-
-
 def update_ANRun( run_id, 
         master_name=None, 
         workers=None, 
@@ -103,6 +100,8 @@ def update_ANRun( run_id,
     if network_config is not None:
         item.network_config = network_config
     if run_settings is not None:
+        if 'run_id' in run_settings:
+            run_settings['run_id'] = run_id
         item.run_settings = run_settings
     if intercomm_settings is not None:
         item.intercomm_settings = intercomm_settings
@@ -144,6 +143,8 @@ def insert_ANRun( run_id,
     if network_config is not None:
         item.network_config = network_config
     if run_settings is not None:
+        if 'run_id' in run_settings:
+            run_settings['run_id'] = run_id
         item.run_settings = run_settings
     if intercomm_settings is not None:
         item.intercomm_settings = intercomm_settings
@@ -176,7 +177,6 @@ def to_dict( run_item ):
         result['data_sizes'] = json.loads( run_item.data_sizes )
     else:
         result['data_sizes'] = None
-
     return result
 
 def get_ANRun( run_id=None ):
@@ -242,14 +242,11 @@ def test_checkpoint():
         raise
     print "Tests Passed[test_checkpoint]"
 
-
-
-
 if __name__ == "__main__":
     if not ANRun.exists():
         ANRun.create_table( read_capacity_units=2, write_capacity_units=1,
             wait=True )
-
+    """
     default_source_data = {
             'bucket':'hd_source_data',
             'data_file':'exp_mat_b6_wt_q111.txt',
@@ -299,5 +296,5 @@ if __name__ == "__main__":
             network_config= default_network_config,
             run_settings = default_run_settings,
             intercomm_settings = default_intercomm_settings,
-            status = COMPLETE)
+            status = COMPLETE)"""
 
