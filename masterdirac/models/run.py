@@ -29,6 +29,29 @@ class ANRun(Model):
     date_created = UTCDateTimeAttribute( default = datetime.utcnow() )
     status = NumberAttribute(default=CONFIG)
 
+class ANRunCheckpoint(Model):
+    class Meta:
+        table_name = 'aurea-nebula-run-checkpoint'
+        region = 'us-east-1'
+    run_id = UnicodeAttribute( hash_key=True )
+    date_created = UnicodeAttribute( range_key = True )
+    num_sent = NumberAttribute( default=0 )
+    strain = UnicodeAttribute( default='None' )
+
+def pack_checkpoint( run_id, num_sent, date_created=None, strain=None):
+    if date_created is None:
+        date_created = datetime.utcnow().isoformat()
+    if strain is None:
+        strain = 'None'
+    return (run_id, num_sent, date_created, strain)
+
+def batch_checkpoint( runs ):
+    with ANRunCheckpoint.batch_write() as batch:
+        items = [ANRunCheckpoint(run[0], run[2], num_sent=run[1], strain=run[3])  
+                    for run in runs]
+        for item in items:
+            batch.save(item)
+
 def update_ANRun( run_id, 
         master_name=None, 
         workers=None, 
