@@ -25,7 +25,7 @@ class ANWorkerConfig(Model):
     startup_log = UnicodeAttribute(default='')
     startup_pid = UnicodeAttribute(default='')
 
-
+#testing post-commit hook
 class ANMasterServer:
     def __init__(self):
 
