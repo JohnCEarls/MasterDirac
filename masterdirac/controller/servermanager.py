@@ -78,6 +78,10 @@ class ServerManager:
                 self._add_work( self.get_work( perm=True ) )
         if self.has_work():
             self.send_run()
+            if not self.has_work():
+                self._run_model = run_mdl.update_ANRun(self._run_model['run_id'], 
+                        status = run_mdl.ACTIVE_ALL_SENT )
+                run_mdl.compress_checkpoint( self._run_model['run_id'] )
         logger.debug("Exiting manage_run")
 
     def poll_launch_requests( self, timeout=20 ):
@@ -247,6 +251,7 @@ class ServerManager:
         to available data clusters
         """
         chunksize = self._run_model['run_settings']['chunksize']
+        cp_list = []
         if len(self.data_servers):
             for k,server in self.data_servers.iteritems():
                 if len(self.work) and not server.busy():
@@ -255,10 +260,15 @@ class ServerManager:
                     num_runs = min( chunksize, total_runs)
                     total_runs -= num_runs
                     if total_runs > 0:
-                        self.work.append( ( run_id, strain, total_runs, shuffle, k ) )
+                        self.work.append( ( run_id, strain, 
+                            total_runs, shuffle, k ) )
                     server.send_run(run_id, strain, num_runs, shuffle, k )
+                    cp_list.append( run_mdl.pack_checkpoint( 
+                        run_id, num_sent, strain=strain) )
                 else:
                     self.logger.info("No jobs")
+            if cp_list:
+                run_mdl.batch_checkpoint( cp_list )
         else:
             self.logger.warning("No data servers")
 
