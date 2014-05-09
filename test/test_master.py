@@ -9,6 +9,8 @@ import logging
 import time
 import boto.exception
 
+#test autopush
+
 def test_init_data( config ):
     logger = logging.getLogger("test_init_data")
     logger.info("*"*10)
