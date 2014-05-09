@@ -133,16 +133,15 @@ class ServerManager:
         """
         Look for active/scheduled runs
         """
-        logger = self.logger
-        logger.debug("Looking for current run")
+        self.logger.debug("Looking for current run")
         master_name = self._master_name
         for item in run_mdl.ANRun.scan():
             #TODO: fix Pynamo scan
             active_run = self._check_run( item )
             if active_run is not None:
-                logger.info("Have run")
+                self.logger.info("Have run")
                 return active_run
-        logger.debug("No run found")
+        self.logger.debug("No run found")
         return None
 
     def get_work( self, perm=True ):
@@ -162,8 +161,10 @@ class ServerManager:
         k = run_settings[ 'k' ]
         strains = md.get_strains()
         run_id = self._add_run_meta( )
+        run_cp = run_mdl.get_checkpoint(run_id)
         if perm:
-            return [(run_id, strain, p, True, k) for strain in md.get_strains()]
+            return [(run_id, strain, p - run_cp[strain], True, k) for strain 
+                                in md.get_strains() if p-run_cp[strain] > 0]
         else:
             return [(run_id, strain, 1, False, k) for strain in md.get_strains() ]
 
