@@ -3,6 +3,7 @@ import time
 import os
 import os.path
 import sys
+import datetime
 
 import pickle
 import logging
@@ -76,6 +77,7 @@ class LogRecordSocketReceiver(SocketServer.ThreadingTCPServer):
     """
     allow_reuse_address = 1
     def __init__(self, host='localhost', port=logging.handlers.DEFAULT_TCP_LOGGING_PORT, handler=LogRecordStreamHandler,doneEvent=None):
+        print "LogRecordStreamHandler"
         SocketServer.ThreadingTCPServer.__init__(self, (host, port), handler)
         self.abort = 0
         self.timeout = 1
@@ -83,6 +85,7 @@ class LogRecordSocketReceiver(SocketServer.ThreadingTCPServer):
         self.doneEvent=doneEvent
 
     def serve_until_stopped(self):
+        print "serve until stopped"
         import select
         cont = self.doneEvent.is_set()
         while cont:
@@ -103,6 +106,7 @@ class LogRecordSocketReceiver(SocketServer.ThreadingTCPServer):
             if isinstance( handler, S3TimedRotatatingFileHandler):
                 handler.doRollover()
         self.doneEvent.set()
+        print "exitting"
 
 class S3TimedRotatatingFileHandler(TimedRotatingFileHandler):
     def __init__(self, filename, when='h', interval=1, backupCount=0, encoding=None, delay=False, utc=False, bucket='diraclog'):
@@ -165,9 +169,9 @@ class S3TimedRotatatingFileHandler(TimedRotatingFileHandler):
 
     def pushToS3(self, filename):
         conn = boto.connect_s3()
-        bucket = conn.get_bucket(self.bucket)
+        bucket = conn.create_bucket(self.bucket)
         k = Key(bucket)
-        k.key = os.path.split(filename)[1]
+        k.key = 'masterdirac-logserver/%s/%s' % (datetime.date.today().strftime('%y-%m-%d'), os.path.split(filename)[1])
         k.set_contents_from_filename(filename, reduced_redundancy=True)
 
 def startLogger():
@@ -189,15 +193,34 @@ def startLogger():
         os.makedirs(log_dir)
     handler = S3TimedRotatatingFileHandler(os.path.join(log_dir,LOG_FILENAME),
                     when=interval_type, interval = interval, bucket=bucket)
-
     doneEvent = threading.Event()
     doneEvent.set()
     tcpserver = LogRecordSocketReceiver(doneEvent=doneEvent, port=int(port))
+
     def shutdownHandler(msg,evt):
         logging.getLogger('logging.SIGHANDLER').critical("Shutdown handler activated")
         if evt.is_set():#only want to do this once, if it is clear then it is shutting down
             evt.clear()
         sys.exit(0)
+
+    def terminate(signal,frame):
+        t = threading.Thread(target = shutdownHandler,
+                args = ('SIGTERM received',doneEvent))
+        t.start()
+        t.join()
+    for s in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT]:
+        signal.signal(s, terminate)
+    handler.setFormatter(logging.Formatter(log_format))
+    logging.getLogger('').addHandler(handler)
+    try:
+        conn = boto.connect_s3()
+        conn.get_bucket(bucket)
+    except:
+        logging.getLogger('logging').exception("Creating s3://%s"%bucket)
+        conn = boto.connect_s3()
+        conn.create_bucket(bucket)
+    tcpserver.serve_until_stopped()
+
 
 
 def initLogging():
