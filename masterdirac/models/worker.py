@@ -44,6 +44,21 @@ class ANWorker(Model):
     startup_pid = UnicodeAttribute(default='')
     key = UnicodeAttribute(default = '')
 
+class ANWorkerLog(Model):
+    class Meta:
+        table_name='aurea-nebula-worker-log'
+        region='us-east-1'
+    worker_id = UnicodeAttribute( hash_key=True )
+    date_created = UnicodeAttribute( range_key=True )
+    message = UnicodeAttribute( default='' )
+
+def get_log( worker_id, date_created='0000' ):
+    log_list = []
+    for item in ANWorkerLog.query( worker_id, date_created__ge=date_created ):
+        log_list.append((item.date_created, item.message))
+
+    log_list.sort(reverse=True)
+    return log_list
 
 def to_dict_ANW( item ):
     """

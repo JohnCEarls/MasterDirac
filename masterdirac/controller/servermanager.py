@@ -9,6 +9,7 @@ import os.path
 import base64
 import multiprocessing
 import subprocess
+import cgi
 
 import numpy as np
 
@@ -98,14 +99,22 @@ class ServerManager:
     def poll_sc_logging( self, timeout=2):
         messages = self.sc_logging_q.get_messages(num_messages=10,
                 wait_time_seconds= timeout)
-        r = False
-        for mess in messages:
-            r = True
-            sc_logging_mess = json.loads( mess.get_body() )
-            self.sc_logging_q.delete_message( mess )
-            self._handle_sc_logging( sc_logging_mess )
-        if r:
-            self.poll_sc_logging(1)
+        log_list = []
+        while len(messages) > 0: 
+            for mess in messages:
+                sc_logging_mess = json.loads( mess.get_body() )
+                self.sc_logging_q.delete_message( mess )
+                log = self._handle_sc_logging( sc_logging_mess )
+                if log:
+                    log_list.append( log )
+            messages = self.sc_logging_q.get_messages(num_messages=10,
+                wait_time_seconds= timeout)
+        if len(log_list):
+            with wkr_mdl.ANWorkerLog.batch_write() as batch:
+                for log in log_list:
+                    batch.save( wkr_mdl.ANWorkerLog( log['worker_id'],
+                        log['time'], message=log['message'] ) )
+
 
     def poll_for_server(self, timeout=20):
         """
@@ -396,10 +405,6 @@ class ServerManager:
                 return False
         return True
 
-
-
-
-
     def _handle_server_init( self, message ):
         self.logger.debug("Handling message %s" % json.dumps( message ) )
         if message['message-type'] == 'gpu-init':
@@ -413,7 +418,29 @@ class ServerManager:
             raise Exception("No initialization found in initialization message")
 
     def _handle_sc_logging(self, mess ):
-        self.logger.info("%r" % mess)
+        self.logger.info("Starcluster Log: %r" % mess)
+        lgt=''
+        if mess['type'] == 'system':
+            lgt = '-success'
+        if mess['type'] == 'stderr':
+            lgt = '-danger'
+        if mess['type'] == 'stdout':
+            lgt = '-info'
+        message_templ = ('<li class="list-group-item '
+                        'list-group-item%s %s">'
+                        '<div class="list-group-item-heading">%s</div>'
+                        '<div class="action">%s</div>'
+                        '<div class="message">%s</span>'
+                        '</li>'
+                        )
+        log = {}
+        if len(mess['msg'].strip()):
+            log['message'] = message_templ % ( lgt, mess['type'],
+                    mess['component'].upper(), mess['action'], 
+                    cgi.escape(mess['msg']) )
+            log['worker_id'] = mess['worker_id']
+            log['time'] = mess['time']
+        return log
 
     def activate_server(self, worker_id):
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
@@ -936,7 +963,7 @@ def log_subprocess_messages( sc_p, q, base_message):
     """
     def send_msg( mtype, msg, base_message=base_message, q=q, acc = {'i':0}):
         log_message = base_message.copy()
-        log_message['time'] = datetime.now().isoformat()
+        log_message['time'] = datetime.utcnow().isoformat()
         log_message['type'] = mtype
         log_message['msg'] = msg
         log_message['count'] = acc['i']
@@ -989,7 +1016,9 @@ def run_sc( worker_id ):
                         'worker_id' : worker_id,
                         'cluster_name': cluster_name,
                         'master_name': master_name,
-                        'pid': pid
+                        'pid': pid,
+                        'component': 'cluster-management',
+                        'action' : 'start'
                     }
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
@@ -1030,7 +1059,9 @@ def terminate_sc( worker_id ):
                         'worker_id' : worker_id,
                         'cluster_name': cluster_name,
                         'master_name': master_name,
-                        'pid': pid
+                        'pid': pid,
+                        'component': 'cluster-management',
+                        'action' : 'terminate'
                     }
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
@@ -1213,9 +1244,11 @@ def cluster_restart( worker_id ):
     master_name = worker_model['master_name']
     cluster_name = worker_model['cluster_name']
     base_message = {'worker_id' : worker_id,
-            'cluster_name': cluster_name, 
-            'master_name': master_name, 
-            'component':'restart'} 
+                    'cluster_name': cluster_name, 
+                    'master_name': master_name, 
+                    'component': 'cluster-management',
+                    'action' : 'restart'
+                   } 
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
     sc_command = "%s -c %s restart %s " % (
