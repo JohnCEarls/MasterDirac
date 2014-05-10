@@ -171,7 +171,7 @@ class S3TimedRotatatingFileHandler(TimedRotatingFileHandler):
         conn = boto.connect_s3()
         bucket = conn.create_bucket(self.bucket)
         k = Key(bucket)
-        k.key = 'masterdirac-logserver/%s/%s' % (datetime.date.today().strftime('%y-%m-%d'), os.path.split(filename)[1])
+        k.key = 'masterdirac-logserver/%s/%s.log' % (datetime.date.today().strftime('%y-%m-%d'), os.path.split(filename)[1])
         k.set_contents_from_filename(filename, reduced_redundancy=True)
 
 def startLogger():
