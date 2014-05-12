@@ -64,3 +64,22 @@ class ServerInterface(object):
         self._send_command(json.dumps(term_mess))
         self._terminated = True
 
+    def delete_queues( self ):
+        try:
+            conn = boto.sqs.connect_to_region( 'us-east-1' )
+            rq = conn.get_queue( self.response_q )
+            conn.delete_queue( rq )
+        except Exception as e:
+            self.logger.error("Attempted to delete %s" % self.response_q )
+            self.logger.exception()
+        try:
+            conn = boto.sqs.connect_to_region( 'us-east-1' )
+            rq = conn.get_queue( self.command_q )
+            conn.delete_queue( rq )
+        except Exception as e:
+            self.logger.error("Attempted to delete %s" % self.response_q )
+            self.logger.exception()
+
+
+            
+
