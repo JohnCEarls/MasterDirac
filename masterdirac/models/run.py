@@ -4,6 +4,7 @@ from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
 from datetime import datetime
 import json
 import collections
+import os.path
 
 #STATUS_CODES
 CONFIG = -10
@@ -94,7 +95,7 @@ def update_ANRun( run_id,
     if source_data is not None:
         item.source_data = source_data
     if dest_data is not None:
-        item.dest_data = dest_data
+        item.dest_data =  preprocess_dest_data( dest_data, run_id )
     if description is not None:
         item.description = description
     if network_config is not None:
@@ -137,7 +138,7 @@ def insert_ANRun( run_id,
     if source_data is not None:
         item.source_data = source_data
     if dest_data is not None:
-        item.dest_data = dest_data
+        item.dest_data = preprocess_dest_data( dest_data, run_id)
     if description is not None:
         item.description = description
     if network_config is not None:
@@ -165,7 +166,7 @@ def to_dict( run_item ):
     result['master_name'] = run_item.master_name
     result['workers'] = run_item.workers
     result['source_data'] = run_item.source_data
-    result['dest_data'] = run_item.dest_data
+    result['dest_data'] = preprocess_dest_data(run_item.dest_data, run_item.run_id)
     result['description'] = run_item.description
     result['network_config'] = run_item.network_config
     result['run_settings'] = run_item.run_settings
@@ -178,6 +179,20 @@ def to_dict( run_item ):
     else:
         result['data_sizes'] = None
     return result
+
+def preprocess_dest_data( dd, run_id ):
+    """
+    Adding a field and changing the naming scheme.
+    """
+    def clean_run_id( run_id ):
+        return run_id.replace(' ', '-')
+    if 'working_bucket_path' not in dd:
+        dd['working_bucket_path'] = 'hd-run-data'
+    else:
+        dd['working_bucket_path'] = dd['working_bucket_path'].replace(' ', '-')
+    dd['meta_file'] = os.path.join( dd['working_bucket_path'], 'meta-%s.txt' % ( run_id ) )
+    dd['dataframe_file'] =  os.path.join( dd['working_bucket_path'], 'dataframe-%s.pnd' % ( run_id ) )
+    return dd
 
 def get_ANRun( run_id=None ):
     if run_id is not None:
@@ -193,7 +208,7 @@ def get_ANRun( run_id=None ):
             results.append( to_dict( item ) )
         return results
 
-def get_pending_ANRun():    
+def get_pending_ANRun():
         results = get_ANRun()
         return [result for result in results if result['status'] in [CONFIG]]
 
