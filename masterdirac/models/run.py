@@ -101,8 +101,7 @@ def update_ANRun( run_id,
     if network_config is not None:
         item.network_config = network_config
     if run_settings is not None:
-        if 'run_id' in run_settings:
-            run_settings['run_id'] = run_id
+        run_settings['run_id'] = run_id
         item.run_settings = run_settings
     if intercomm_settings is not None:
         item.intercomm_settings =  preprocess_intercomm_settings(run_id)
@@ -144,8 +143,7 @@ def insert_ANRun( run_id,
     if network_config is not None:
         item.network_config = network_config
     if run_settings is not None:
-        if 'run_id' in run_settings:
-            run_settings['run_id'] = run_id
+        run_settings['run_id'] = run_id
         item.run_settings = run_settings
     if intercomm_settings is not None:
         item.intercomm_settings = preprocess_intercomm_settings(run_id)
