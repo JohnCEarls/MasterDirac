@@ -105,7 +105,7 @@ def update_ANRun( run_id,
             run_settings['run_id'] = run_id
         item.run_settings = run_settings
     if intercomm_settings is not None:
-        item.intercomm_settings = intercomm_settings
+        item.intercomm_settings =  preprocess_intercomm_settings(run_id)
     if aggregator_settings is not None:
         item.aggregator_settings = aggregator_settings
     if status is not None:
@@ -148,7 +148,7 @@ def insert_ANRun( run_id,
             run_settings['run_id'] = run_id
         item.run_settings = run_settings
     if intercomm_settings is not None:
-        item.intercomm_settings = intercomm_settings
+        item.intercomm_settings = preprocess_intercomm_settings(run_id)
     if aggregator_settings is not None:
         item.aggregator_settings = aggregator_settings
     if status is not None:
@@ -170,7 +170,7 @@ def to_dict( run_item ):
     result['description'] = run_item.description
     result['network_config'] = run_item.network_config
     result['run_settings'] = run_item.run_settings
-    result['intercomm_settings'] = run_item.intercomm_settings
+    result['intercomm_settings'] = preprocess_intercomm_settings( run_item.run_id )
     result['aggregator_settings'] = run_item.aggregator_settings
     result['date_created'] = run_item.date_created
     result['status'] = run_item.status
@@ -193,6 +193,18 @@ def preprocess_dest_data( dd, run_id ):
     dd['meta_file'] = os.path.join( dd['working_bucket_path'], 'meta-%s.txt' % ( run_id ) )
     dd['dataframe_file'] =  os.path.join( dd['working_bucket_path'], 'dataframe-%s.pnd' % ( run_id ) )
     return dd
+
+def preprocess_intercomm_settings( run_id ):
+    base = {
+        'sqs_from_data_to_gpu':'from-data-to-gpu-%s' % run_id ,
+        'sqs_from_gpu_to_agg':'from-gpu-to-agg-%s' % run_id ,
+        'sqs_from_data_to_agg':'from-data-to-agg-%s' % run_id ,
+        'sqs_from_data_to_agg_truth':'from-data-to-agg-%s-truth' % run_id ,
+        's3_from_data_to_gpu':'an-from-data-to-gpu-%s' % run_id ,
+        's3_from_gpu_to_agg':'an-from-gpu-to-agg-%s' % run_id 
+    }
+    return base
+
 
 def get_ANRun( run_id=None ):
     if run_id is not None:
