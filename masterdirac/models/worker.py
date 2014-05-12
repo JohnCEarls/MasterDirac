@@ -218,6 +218,7 @@ class ANWorkerBase(Model):
     cluster_size = NumberAttribute( default=0 )
     plugins = UnicodeAttribute( default='' )
     force_spot_master = BooleanAttribute( default=True )
+    available = BooleanAttribute( default=True )
     spot_bid = NumberAttribute( default = 0.0 )
     prefix = UnicodeAttribute( default='')
     iam_profile = UnicodeAttribute( default='' )
@@ -230,7 +231,8 @@ def insert_ANWorkerBase( cluster_type, aws_region,
         force_spot_master=None,
         spot_bid=None,
         prefix=None,
-        iam_profile=None
+        iam_profile=None,
+        available=None
         ):
     item = ANWorkerBase( cluster_type, aws_region)
     if instance_type is not None:
@@ -249,11 +251,14 @@ def insert_ANWorkerBase( cluster_type, aws_region,
         item.prefix = prefix
     if iam_profile is not None:
         item.iam_profile = iam_profile
+    if available is not None:
+        item.available = available
     item.save()
 
 def update_ANWorkerBase( cluster_type, aws_region, instance_type=None,
         image_id=None, cluster_size=None, plugins=None,
-        force_spot_master=None, spot_bid=None):
+        force_spot_master=None, spot_bid=None,
+        available=None):
     item = ANWorkerBase.get( cluster_type, aws_region)
     if instance_type is not None:
         item.instance_type = instance_type
@@ -271,6 +276,8 @@ def update_ANWorkerBase( cluster_type, aws_region, instance_type=None,
         item.prefix = prefix
     if iam_profile is not None:
         item.iam_profile = iam_profile
+    if available is not None:
+        item.available = available
     item.save()
 
 def delete_ANWorkerBase( cluster_type, aws_region ):
