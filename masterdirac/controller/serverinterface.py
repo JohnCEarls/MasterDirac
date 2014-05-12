@@ -3,6 +3,8 @@ from boto.sqs.message import Message
 import logging
 import boto.ec2
 import boto.sqs
+import collections
+
 
 class ServerInterface(object):
     def __init__(self, init_message):

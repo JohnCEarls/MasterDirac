@@ -22,6 +22,7 @@ import boto.dynamodb2
 from boto.dynamodb2.table import Table
 from boto.dynamodb2.items import Item
 from boto.s3.key import Key
+from boto.exception import S3ResponseError
 
 import datadirac.data
 import masterdirac.models.master as master_mdl
@@ -80,7 +81,7 @@ class ServerManager:
         if self.has_work():
             self.send_run()
             if not self.has_work():
-                self._run_model = run_mdl.update_ANRun(self._run_model['run_id'], 
+                self._run_model = run_mdl.update_ANRun(self._run_model['run_id'],
                         status = run_mdl.ACTIVE_ALL_SENT )
                 run_mdl.compress_checkpoint( self._run_model['run_id'] )
         logger.debug("Exiting manage_run")
@@ -100,7 +101,7 @@ class ServerManager:
         messages = self.sc_logging_q.get_messages(num_messages=10,
                 wait_time_seconds= timeout)
         log_list = []
-        while len(messages) > 0: 
+        while len(messages) > 0:
             for mess in messages:
                 sc_logging_mess = json.loads( mess.get_body() )
                 self.sc_logging_q.delete_message( mess )
@@ -176,12 +177,28 @@ class ServerManager:
         run_id = self._add_run_meta( )
         run_cp = run_mdl.get_checkpoint(run_id)
         if perm:
-            return [(run_id, strain, p - run_cp[strain], True, k) for strain 
+            return [(run_id, strain, p - run_cp[strain], True, k) for strain
                                 in md.get_strains() if p-run_cp[strain] > 0]
         else:
             return [(run_id, strain, 1, False, k) for strain in md.get_strains() ]
 
     def _add_run_meta( self):
+        def json_prep( dct ):
+            """
+            Prepares a dictionary to be jsonized
+            """
+            for k,v in dct.iteritems():
+                try:
+                    #convert datetime to string
+                    dct[k] = v.isoformat()
+                except AttributeError as ae:
+                    pass
+                    if type(v) == set:
+                        dct[k] = list(v)
+                    if type(v) == dict:
+                        dct[k] = json_prep( v )
+            return dct
+
         run_settings = self._run_model['run_settings']
         logger = self.logger
         logger.info('Adding metadata for this run')
@@ -193,12 +210,14 @@ class ServerManager:
         if table.query_count( run_id__eq=run_id ) == 0:
             timestamp = datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
             item = Item( table, data={'run_id':run_id,  'timestamp':timestamp} )
-            item['config'] = base64.b64encode( json.dumps(  run_model  ) )
+            item['config'] = base64.b64encode( json.dumps( json_prep( self._run_model)  ) )
             #k is in config, and that will be what most queries are interested in
             #so no need to make all clients decode64 and load json
             item['k'] = run_settings[ 'k' ]
             item.save()
         return run_id
+
+
 
     def _check_run( self, run_item ):
         """
@@ -234,7 +253,7 @@ class ServerManager:
         self.logger.debug("Loading Configs")
         self._load_run_config()
         self._configure_data()
-        self._configure_gpu(run_model['data_sizes'])
+        self._configure_gpu(self._run_model['data_sizes'])
 
     def data_is_initialized(self):
         """
@@ -269,11 +288,11 @@ class ServerManager:
                     num_runs = min( chunksize, total_runs)
                     total_runs -= num_runs
                     if total_runs > 0:
-                        self.work.append( ( run_id, strain, 
+                        self.work.append( ( run_id, strain,
                             total_runs, shuffle, k ) )
                     server.send_run(run_id, strain, num_runs, shuffle, k )
-                    cp_list.append( run_mdl.pack_checkpoint( 
-                        run_id, num_sent, strain=strain) )
+                    cp_list.append( run_mdl.pack_checkpoint(
+                        run_id, num_runs, strain=strain) )
                 else:
                     self.logger.info("No jobs")
             if cp_list:
@@ -335,22 +354,27 @@ class ServerManager:
         """
         run_model = self._run_model
         local_config = self._local_settings
+        if not os.path.exists(self._local_settings['working_dir']):
+            self.logger.info( "Creating directory [%s]" % (
+                self._local_settings['working_dir'] ) )
+
+            os.makedirs(self._local_settings['working_dir'])
         sd = run_model['source_data']
         #grab filenames we are interested in
-        file_list = [f for  k, f  in sd.iteritems() if k[:-4] == 'file']
+        file_list = [f for  k, f  in sd.iteritems() if k[-4:] == 'file']
         conn = boto.connect_s3()
         bucket = conn.get_bucket( sd['bucket'] )
         for key_name in file_list:
             s3_path, fname = os.path.split(key_name)
             local_path = os.path.join(self._local_settings['working_dir'], fname)
             try:
-                self.logger.info( "Transferring s3://%s/%s to %s" % (source_bucket,f, local_path ))
+                self.logger.info( "Transferring s3://%s/%s to %s" % (sd['bucket'],key_name, local_path ))
                 k = Key(bucket)
-                k.key = f #fname
+                k.key = key_name
                 k.get_contents_to_filename(local_path)
                 self.logger.info("Transfer complete")
             except S3ResponseError as sre:
-                self.logger.error("bucket:[%s] file:[%s] download." % (source_bucket,f))
+                self.logger.error("bucket:[%s] file:[%s] download." % (sd['bucket'],key_name))
                 self.logger.error(str(sre))
                 raise(sre)
         self.logger.info("Complete")
@@ -364,11 +388,11 @@ class ServerManager:
         max_ngenes = len(df.index)
         max_nnets = len(net_est)
         max_comp = sum([x*(x-1)/2 for x in net_est])
-        self.logger.debug(( "Upper Bound on matrix dims " 
+        self.logger.debug(( "Upper Bound on matrix dims "
             "samp[%i], gen[%i],nets[%i], comp[%s]") % (
                 max_nsamples, max_ngenes, max_nnets, max_comp) )
         data_sizes = (max_nsamples, max_ngenes, max_nnets, max_comp)
-        self._run_model = run_mdl.update_ANRun( self._run_model['run_id'], 
+        self._run_model = run_mdl.update_ANRun( self._run_model['run_id'],
                     data_sizes=data_sizes )
 
     def source_data_exists( self ):
@@ -376,7 +400,7 @@ class ServerManager:
         Check that the files we expect to be in source exist
         """
         source_data = self._run_model['source_data']
-        source_keys = [  
+        source_keys = [
                         source_data[ 'data_file'],
                         source_data[ 'meta_file'],
                         source_data[ 'annotations_file'],
@@ -398,7 +422,7 @@ class ServerManager:
         dest_data = self._run_model[ 'dest_data' ]
         conn = boto.connect_s3()
         dest_bucket = conn.get_bucket( dest_data['working_bucket'] )
-        dest_keys = [ dest_data['working_bucket'], dest_data['meta_file'],
+        dest_keys = [dest_data['meta_file'],
                 dest_data['dataframe_file'] ]
         for key in dest_keys:
             if not dest_bucket.get_key( key , validate=True):
@@ -436,7 +460,7 @@ class ServerManager:
         log = {}
         if len(mess['msg'].strip()):
             log['message'] = message_templ % ( lgt, mess['type'],
-                    mess['component'].upper(), mess['action'], 
+                    mess['component'].upper(), mess['action'],
                     cgi.escape(mess['msg']) )
             log['worker_id'] = mess['worker_id']
             log['time'] = mess['time']
@@ -475,7 +499,7 @@ class ServerManager:
                 'is not INIT - current status[%i] ') % ( run_id, self.status ))
             raise Exception(( 'Attempted to start run %s and master status'
                 'is not INIT - current status[%i] ') % ( run_id, self.status ))
-        run_mdl.update_ANRun( run_id, status=run_mdl.INIT, 
+        run_mdl.update_ANRun( run_id, status=run_mdl.INIT,
                 master_name=self.master_model['master_name'] )
 
 
@@ -981,10 +1005,10 @@ def log_subprocess_messages( sc_p, q, base_message):
                 send_msg('stdout', sc_p.stdout.readline().strip() )
             if fd.fileno() == sc_p.stderr.fileno():
                 send_msg('stderr', sc_p.stderr.readline().strip() )
-    line = sc_p.stdout.readline().strip() 
+    line = sc_p.stdout.readline().strip()
     while line != '':
         send_msg('stdout',line)
-        line = sc_p.stdout.readline().strip() 
+        line = sc_p.stdout.readline().strip()
     line = sc_p.stderr.readline().strip()
     while line != '':
         send_msg('stderr', line)
@@ -997,7 +1021,7 @@ def run_sc( worker_id ):
     This runs the starcluster commands necessary to instantiate
     a worker cluster.
     """
-    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config',
             'Master' )
 
     #path to starcluster exe
@@ -1025,10 +1049,10 @@ def run_sc( worker_id ):
     sc_command = "%s -c %s start -c %s %s" % (
             os.path.expanduser(starcluster_bin),
             sc_config_url,
-            cluster_name, 
+            cluster_name,
             cluster_name)
     base_message['command'] = sc_command
-    sc_p = subprocess.Popen( sc_command, 
+    sc_p = subprocess.Popen( sc_command,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
     log_subprocess_messages( sc_p, q, base_message)
     ec2 = boto.ec2.connect_to_region(worker_model['aws_region'])
@@ -1036,14 +1060,14 @@ def run_sc( worker_id ):
     for group in ec2.get_all_security_groups(['@sc-%s' % cluster_name ] ):
         instances += [inst.id for inst in group.instances()]
     if len(instances) > 0:
-        wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY, 
+        wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY,
             num_nodes = len(instances), nodes= instances)
     else:
-        wkr_mdl.update_ANWorker( worker_id, 
+        wkr_mdl.update_ANWorker( worker_id,
                 status=wkr_mdl.TERMINATED_WITH_ERROR )
 
 def terminate_sc( worker_id ):
-    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config',
             'Master' )
     #path to starcluster exe
     starcluster_bin = launcher_config['starcluster_bin']
@@ -1070,7 +1094,7 @@ def terminate_sc( worker_id ):
             sc_config_url,
             cluster_name)
     base_message['command'] = sc_command
-    sc_p = subprocess.Popen( sc_command, 
+    sc_p = subprocess.Popen( sc_command,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
     log_subprocess_messages( sc_p, q, base_message)
     ec2 = boto.ec2.connect_to_region(worker_model['aws_region'])
@@ -1084,7 +1108,7 @@ def terminate_sc( worker_id ):
     if len(instances) == 0:
         wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.TERMINATED)
     else:
-        wkr_mdl.update_ANWorker( worker_id, 
+        wkr_mdl.update_ANWorker( worker_id,
                 status=wkr_mdl.TERMINATED_WITH_ERROR )
 
 def start_gpu( worker_id ):
@@ -1131,7 +1155,7 @@ def gpu_logserver_daemon( worker_id, action='start'):
     """
     Manages interactions with gpu logserver
     """
-    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config',
             'Master' )
     #path to starcluster exe
     starcluster_bin = launcher_config['starcluster_bin']
@@ -1159,7 +1183,7 @@ def gpu_logserver_daemon( worker_id, action='start'):
     if action == 'start':
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/logserver.sh start'"
     if action == 'status':
-        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/logserver.sh status'" 
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/logserver.sh status'"
     if action == 'stop':
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/logserver.sh stop'"
     base_message['command'] = sc_command
@@ -1167,7 +1191,7 @@ def gpu_logserver_daemon( worker_id, action='start'):
     log_subprocess_messages( sc_p, q, base_message)
 
 def gpu_daemon( worker_id, gpu_id=0, action='start'):
-    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config',
             'Master' )
     starcluster_bin = launcher_config['starcluster_bin']
     base_sc_config_url = launcher_config['sc_config_url']
@@ -1181,8 +1205,8 @@ def gpu_daemon( worker_id, gpu_id=0, action='start'):
                         'worker_id' : worker_id,
                         'cluster_name': cluster_name,
                         'master_name': master_name,
-                        'gpu_id':str(gpu_id), 
-                        'action':action, 
+                        'gpu_id':str(gpu_id),
+                        'action':action,
                         'component':'gpuserver-daemon' }
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
@@ -1201,7 +1225,7 @@ def gpu_daemon( worker_id, gpu_id=0, action='start'):
     log_subprocess_messages( sc_p, q, base_message)
 
 def data_daemon( worker_id, action="start"):
-    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config',
             'Master' )
     starcluster_bin = launcher_config['starcluster_bin']
     base_sc_config_url = launcher_config['sc_config_url']
@@ -1215,7 +1239,7 @@ def data_daemon( worker_id, action="start"):
                         'worker_id' : worker_id,
                         'cluster_name': cluster_name,
                         'master_name': master_name,
-                        'action':action, 
+                        'action':action,
                         'component':'dataserver-daemon' }
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
@@ -1236,7 +1260,7 @@ def data_daemon( worker_id, action="start"):
 
 
 def cluster_restart( worker_id ):
-    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config', 
+    launcher_config = sys_def_mdl.get_system_defaults( 'launcher_config',
             'Master' )
     base_sc_config_url = launcher_config['sc_config_url']
     sc_config_url = base_sc_config_url + '/' + worker_id
@@ -1244,11 +1268,11 @@ def cluster_restart( worker_id ):
     master_name = worker_model['master_name']
     cluster_name = worker_model['cluster_name']
     base_message = {'worker_id' : worker_id,
-                    'cluster_name': cluster_name, 
-                    'master_name': master_name, 
+                    'cluster_name': cluster_name,
+                    'master_name': master_name,
                     'component': 'cluster-management',
                     'action' : 'restart'
-                   } 
+                   }
     sqs =boto.sqs.connect_to_region("us-east-1")
     q = sqs.create_queue(launcher_config['startup_logging_queue'])
     sc_command = "%s -c %s restart %s " % (
