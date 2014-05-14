@@ -16,8 +16,8 @@ if __name__ == "__main__":
     data_dir = os.path.dirname(os.path.realpath(__file__))
     force_write = True
     print data_dir
-    #hd.get_from_s3( source_bucket, data, meta_data, annotation_data, syn_file, 
-    #        agilent_file, data_dir, force_write)
+    hd.get_from_s3( source_bucket, data, meta_data, annotation_data, syn_file, 
+            agilent_file, data_dir, force_write)
     network_config['network_table'] = 'net_info_table'
     network_config['network_source'] = 'c2.cp.biocarta.v4.0.symbols.gmt'
     hddg =  hd.HDDataGen( data_dir )
