@@ -22,17 +22,12 @@ def get_from_s3( source_bucket, data, meta_data, annotation_data, syn_file, agil
     If force_write is True, it downloads and overwrites the current file.
     returns the local location of data, meta_data, annotation_data
     """
-    raise Exception("Deprecated")
-    #not sure this is still being used
-    #has been removed from servermanager
-    #see if i
     logger = logging.getLogger("get_from_s3")
     logger.info("Running: getFromS3('%s','%s','%s','%s','%s',%s)"%( source_bucket, data, meta_data, annotation_data, data_dir, str(force_write) ))
     #check that data dir exists, if not create it
     if not os.path.exists(data_dir):
         logger.info( "Creating directory [%s]" % data_dir )
         os.makedirs(data_dir)
-
     conn = boto.connect_s3()
     b = conn.get_bucket(source_bucket)
     file_list = [data,meta_data,annotation_data, syn_file, agilent_file]
