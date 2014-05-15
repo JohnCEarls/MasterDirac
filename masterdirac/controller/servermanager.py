@@ -75,7 +75,10 @@ class ServerManager:
                     active_run))
                 self.status = master_mdl.INIT
                 return
+            self.logger.debug("In manage run pre add work")
+            self.logger.debug("self.has_work == [%r]" % self.has_work() )
             if not self.has_work():
+                self.logger.info("Adding work")
                 self._add_work( self.get_work( perm=False ) )
                 self._add_work( self.get_work( perm=True ) )
         if self.has_work():
@@ -176,6 +179,7 @@ class ServerManager:
         strains = md.get_strains()
         run_id = self._add_run_meta( )
         run_cp = run_mdl.get_checkpoint(run_id)
+        self.logger.debug("Strains [%r]" % strains )
         if perm:
             return [(run_id, strain, p - run_cp[strain], True, k) for strain
                                 in md.get_strains() if p-run_cp[strain] > 0]
@@ -271,6 +275,7 @@ class ServerManager:
             self.logger.info("%s(data server): sent termination signal" % k)
 
     def has_work(self):
+        self.logger.debug("self.work == [%r]"  % self.work )
         return len(self.work) > 0
 
     def send_run( self ):
@@ -280,9 +285,12 @@ class ServerManager:
         """
         chunksize = self._run_model['run_settings']['chunksize']
         cp_list = []
+
         if len(self.data_servers):
             for k,server in self.data_servers.iteritems():
+                self.logger.info("Server[%s] busy[%s]" %(k, server.busy()))
                 if len(self.work) and not server.busy():
+                    self.logger.info("adding work to server[%s]" % k)
                     current_job = self.work.pop()
                     run_id, strain, total_runs, shuffle, k = current_job
                     num_runs = min( chunksize, total_runs)
@@ -294,7 +302,7 @@ class ServerManager:
                     cp_list.append( run_mdl.pack_checkpoint(
                         run_id, num_runs, strain=strain) )
                 else:
-                    self.logger.info("No jobs")
+                    self.logger.info("No jobs or all servers busy")
             if cp_list:
                 run_mdl.batch_checkpoint( cp_list )
         else:
