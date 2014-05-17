@@ -11,7 +11,6 @@ from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
 from pynamodb.exceptions import DoesNotExist
 import StringIO
 from flask import render_template
-from tcdiracweb import app
 import sys
 import select
 import boto.sqs
