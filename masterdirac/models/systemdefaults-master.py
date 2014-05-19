@@ -69,7 +69,8 @@ def set_system_defaults():
 
     item = ANSystemDefaults('local_settings', 'Master')
     item.settings = {'working_dir': '/scratch/sgeadmin/master',
-            'init-queue':'tcdirac-master'
+            'init-queue':'tcdirac-master',
+            'branch':'master'
             }
     item.save()
 

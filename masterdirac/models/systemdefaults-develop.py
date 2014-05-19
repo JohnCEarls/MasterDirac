@@ -69,7 +69,8 @@ def set_system_defaults():
 
     item = ANSystemDefaults('local_settings', 'Master')
     item.settings = {'working_dir': '/scratch/sgeadmin/master',
-            'init-queue':'tcdirac-master-dev'
+            'init-queue':'tcdirac-master-dev',
+            'branch':'develop'
             }
     item.save()
 
@@ -91,7 +92,8 @@ def set_system_defaults():
             'starcluster_bin' : '/home/sgeadmin/.local/bin/starcluster',
             'sc_config_url' : 'https://aurea-nebula-dev.adversary.us/cm/config',
             'startup_logging_queue': 'sc-logging-queue-dev',
-            'key_location':'/home/sgeadmin'}
+            'key_location':'/home/sgeadmin'
+            }
     item.save()
 
     item = ANSystemDefaults('loggingserver', 'Master')
