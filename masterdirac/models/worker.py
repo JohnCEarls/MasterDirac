@@ -155,14 +155,15 @@ def get_ANWorker( worker_id=None, master_name=None, cluster_name=None ):
             results.append( to_dict_ANW( item ) )
         return results
 
-def get_active_workers():
+def get_active_workers(master_name=None):
     """
     Returns workers that may be operated on (i.e. have not been used)
     """
     results = []
     for item in ANWorker.scan():
         if item.status in active_statuses:
-            results.append( to_dict_ANW( item ) )
+            if master_name is None or item.master_name == master_name:
+                results.append( to_dict_ANW( item ) )
     results.sort( key=lambda x: (x['cluster_type'], x['aws_region'], x['status']) )
     return results
 
