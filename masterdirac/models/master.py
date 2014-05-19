@@ -40,15 +40,16 @@ def to_dict( master_item ):
     result['status'] = master_item.status
     return result
 
-def get_active_master( ):
-    local_settings = sys_def.get_system_defaults('local_settings', 'Master')
+def get_active_master( branch=None ):
     masters = get_master()
     for master in masters:
-        if master['status'] in [INIT, RUN]:
-            if local_settings['branch'] == master['branch'] and confirm_master_active( master ):
-                return master
-            else:
-                update_master( master['master_name'], status= TERMINATED_WITH_ERROR)
+        if branch is None or branch == master['branch']:
+            if master['status'] in [INIT, RUN]:
+                if confirm_master_active( master ):
+                    return master
+                else:
+                    update_master( master['master_name'], 
+                            status= TERMINATED_WITH_ERROR)
     return None
 
 def handle_inconsistent_masters():

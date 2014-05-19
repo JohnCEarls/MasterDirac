@@ -7,6 +7,7 @@ import hashlib
 import logging
 import boto.ec2
 import boto.exception
+import masterdirac.models.master as master_mdl
 #STATES
 NA = -10
 TERMINATED_WITH_ERROR = -5
@@ -155,11 +156,13 @@ def get_ANWorker( worker_id=None, master_name=None, cluster_name=None ):
             results.append( to_dict_ANW( item ) )
         return results
 
-def get_active_workers(master_name=None):
+def get_active_workers(branch=None):
     """
     Returns workers that may be operated on (i.e. have not been used)
     """
     results = []
+    
+    master_name = master_mdl.get_active_master(branch)
     for item in ANWorker.scan():
         if item.status in active_statuses:
             if master_name is None or item.master_name == master_name:
