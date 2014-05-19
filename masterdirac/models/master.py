@@ -109,6 +109,7 @@ def update_master( master_name,
         instance_id = None,
         comm_queue = None,
         status = None,
+        branch = None,
         **kwargs):
 
     item = ANMaster.get( master_name )
@@ -122,6 +123,8 @@ def update_master( master_name,
         item.comm_queue = comm_queue
     if status is not None:
         item.status = status
+    if branch is not None:
+        item.branch = branch
     item.save()
     return to_dict( item )
 
@@ -131,6 +134,7 @@ def insert_master( master_name,
         instance_id = None,
         comm_queue = None,
         status = None,
+        branch = None
         **kwargs):
 
     item = ANMaster( master_name )
@@ -144,6 +148,8 @@ def insert_master( master_name,
         item.comm_queue = comm_queue
     if status is not None:
         item.status = status
+    if branch is not None:
+        item.branch = branch
     item.save()
     return to_dict( item )
 

@@ -874,7 +874,11 @@ class ServerManager:
             aws_region=aws_region,
             instance_id = instance_id,
             comm_queue = comm_queue,
-            status = status )
+            status = status,
+            branch = self._local_settings['branch']
+
+            )
+
 
     def _get_local_settings(self):
         return sys_def_mdl.get_system_defaults( 'local_settings', 'Master' )
