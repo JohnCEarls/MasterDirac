@@ -5,6 +5,9 @@ from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
 from datetime import datetime
 import hashlib
 import pprint
+
+raise Exception( ( "DEPRECATED...this file is overwritten "
+                    "on install by systemdefaults-{$BRANCH}" ) )
 class ANSystemDefaults(Model):
     class Meta:
         table_name='aurea-nebula-system-defaults'

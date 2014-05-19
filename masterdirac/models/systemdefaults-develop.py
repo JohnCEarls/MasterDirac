@@ -7,7 +7,7 @@ import hashlib
 import pprint
 class ANSystemDefaults(Model):
     class Meta:
-        table_name='aurea-nebula-system-defaults'
+        table_name='aurea-nebula-system-defaults-dev'
         region = 'us-east-1'
     setting_name = UnicodeAttribute( hash_key = True )
     component = UnicodeAttribute( range_key = True )
@@ -34,8 +34,6 @@ def get_system_defaults( setting_name = None, component=None ):
         try:
             item = ANSystemDefaults.get( setting_name , component)
             result = dict(item.settings)
-            if  setting_name == 'launcher_config' and component =='Master':
-                result['sc_config_url'] = 'https://aurea-nebula-dev.adversary.us/cm/config'
             return result
         except ANSystemDefaults.DoesNotExist as dne:
             return {}
@@ -52,7 +50,7 @@ def set_system_defaults():
     item = ANSystemDefaults('logging', 'Data Cluster')
     item.settings = {
             'logging_file':'/scratch/sgeadmin/logs/datadirac.log',
-            'log_bucket':'datadirac-logging-aurea-nebula',
+            'log_bucket':'datadirac-logging-aurea-nebula-dev',
             'log_s3_name_format': 'logs/datadirac/%s-%s.log',
             'level':'WARNING',
             'boto_level':'ERROR',
@@ -62,7 +60,7 @@ def set_system_defaults():
     item = ANSystemDefaults('cluster_init', 'Data Cluster')
     item.settings = {'data_log_dir': '/scratch/sgeadmin/data_log',
                     'working_dir': '/scratch/sgeadmin/working',
-                    'init-queue':'tcdirac-master'}
+                    'init-queue':'tcdirac-master-dev'}
     item.save()
 
     ################
@@ -71,7 +69,7 @@ def set_system_defaults():
 
     item = ANSystemDefaults('local_settings', 'Master')
     item.settings = {'working_dir': '/scratch/sgeadmin/master',
-            'init-queue':'tcdirac-master'
+            'init-queue':'tcdirac-master-dev'
             }
     item.save()
 
@@ -88,18 +86,18 @@ def set_system_defaults():
     item.save()
 
     item = ANSystemDefaults('launcher_config', 'Master')
-    item.settings = {'launcher_sqs_in':'aurea-nebula-launcher-in',
-            'launcher_sqs_out':'aurea-nebula-launcher-out',
+    item.settings = {'launcher_sqs_in':'aurea-nebula-launcher-in-dev',
+            'launcher_sqs_out':'aurea-nebula-launcher-out-dev',
             'starcluster_bin' : '/home/sgeadmin/.local/bin/starcluster',
-            'sc_config_url' : 'https://aurea-nebula.adversary.us/cm/config',
-            'startup_logging_queue': 'sc-logging-queue',
+            'sc_config_url' : 'https://aurea-nebula-dev.adversary.us/cm/config',
+            'startup_logging_queue': 'sc-logging-queue-dev',
             'key_location':'/home/sgeadmin'}
     item.save()
 
     item = ANSystemDefaults('loggingserver', 'Master')
     item.settings = {'directory':'/scratch/sgeadmin/logs',
         'log_filename':'None',
-        'bucket':'diraclog',
+        'bucket':'diraclog-dev',
         'log_format':'%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         'interval_type':'M',
         'interval':1,
@@ -118,7 +116,7 @@ def set_system_defaults():
     item.save()
 
     item = ANSystemDefaults( 'queues', 'Dual GPU')
-    item.settings = {'init_q': 'tcdirac-master'}
+    item.settings = {'init_q': 'tcdirac-master-dev'}
     item.save()
 
     item = ANSystemDefaults('logging', 'Dual GPU')
@@ -141,7 +139,7 @@ def set_system_defaults():
             'interval_type':'M',
             'interval':1,
             'port':9022,
-            'bucket':'gpu-logging-aurea-nebula'
+            'bucket':'gpu-logging-aurea-nebula-dev'
             }
     item.save()
 
