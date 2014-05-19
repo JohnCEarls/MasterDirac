@@ -162,7 +162,8 @@ def get_active_workers(branch=None):
     """
     results = []
     
-    master_name = master_mdl.get_active_master(branch)
+    master = master_mdl.get_active_master(branch)
+    master_name = master['master_name']
     for item in ANWorker.scan():
         if item.status in active_statuses:
             if master_name is None or item.master_name == master_name:
