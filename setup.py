@@ -23,6 +23,21 @@
 
 import os
 import sys
+import git
+import os.path
+import os
+import shutil
+#kinda hacky way to let the repo determine the systemdefaults model
+thisdir = os.path.dirname(os.path.realpath(__file__))
+repo = git.Repo( thisdir )
+branch_sys_def  = os.path.join( thisdir, 
+    'masterdirac/models/systemdefaults-%s.py' % (
+    repo.active_branch.name ))
+sys_def =  os.path.join( thisdir, 'masterdirac/models/systemdefaults.py')
+temp_sys_def = os.path.join( thisdir, 'masterdirac/models/systemdefaults.py.bak')
+shutil.copy( sys_def, temp_sys_def )
+shutil.copy( branch_sys_def, sys_def )
+#cleanup at end of file
 
 if sys.version_info < (2, 7):
     error = "ERROR: MasterDirac requires Python 2.7+ ... exiting."
@@ -32,7 +47,7 @@ if sys.version_info < (2, 7):
 from setuptools import setup, find_packages
 console_scripts = ['masterdirac-logserver = masterdirac.utils.debug:startLogger',
                    'masterdirac = masterdirac.server:main' ]
-extra = dict(install_requires=["boto>=2.9.9", "datadirac"],
+extra = dict(install_requires=["boto>=2.9.9", "datadirac", "GitPython"],
             entry_points=dict(console_scripts=console_scripts),
              zip_safe=False)
 VERSION = '0.0.0'#actually set in utils.static
@@ -68,3 +83,7 @@ classifiers=[
 ],
 **extra
 )
+
+#cleanup from systemdefaults swap above
+shutil.copy( temp_sys_def, sys_def )
+os.remove( temp_sys_def )
