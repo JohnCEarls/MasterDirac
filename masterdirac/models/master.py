@@ -134,7 +134,7 @@ def insert_master( master_name,
         instance_id = None,
         comm_queue = None,
         status = None,
-        branch = None
+        branch = None,
         **kwargs):
 
     item = ANMaster( master_name )
