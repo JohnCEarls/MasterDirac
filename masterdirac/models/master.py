@@ -5,6 +5,7 @@ from datetime import datetime
 import logging
 import boto.ec2
 import boto.exception
+import masterdirac.models.systemdefaults as sys_def
 #STATES
 NA = -10
 TERMINATED_WITH_ERROR = -5
@@ -21,6 +22,7 @@ class ANMaster(Model):
     date_created = UTCDateTimeAttribute(
             default=datetime.utcnow() )
     aws_region = UnicodeAttribute(default='')
+    branch = UnicodeAttribute(default='master')
     key_pairs = JSONAttribute(default={})
     instance_id = UnicodeAttribute(default='')
     comm_queue = UnicodeAttribute(default='')
@@ -34,14 +36,16 @@ def to_dict( master_item ):
     result['key_pairs'] = master_item.key_pairs
     result['instance_id'] = master_item.instance_id
     result['comm_queue'] = master_item.comm_queue
+    result['branch'] = master_item.branch
     result['status'] = master_item.status
     return result
 
 def get_active_master( ):
+    local_settings = sys_def.get_system_defaults('local_settings', 'Master')
     masters = get_master()
     for master in masters:
         if master['status'] in [INIT, RUN]:
-            if confirm_master_active( master ):
+            if local_settings['branch'] == master['branch'] and confirm_master_active( master ):
                 return master
             else:
                 update_master( master['master_name'], status= TERMINATED_WITH_ERROR)
