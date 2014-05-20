@@ -229,7 +229,13 @@ class ServerManager:
 
         If the run is not active, makes this the owner of the run
         """
-        if run_item.status == run_mdl.ACTIVE:
+        if run_item.status == run_mdl.INIT:
+            #new run
+            run_item.master_name = self._master_name
+            run_item.status = run_mdl.ACTIVE
+            run_item.save()
+            return run_mdl.to_dict(run_item)
+        elif run_item.status == run_mdl.ACTIVE:
             #already active run
             if run_item.master_name == self._master_name:
                 return run_mdl.to_dict(run_item)
