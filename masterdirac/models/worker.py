@@ -164,12 +164,13 @@ def get_active_workers(branch=None):
     
     master = master_mdl.get_active_master(branch)
     if master:
-        master_name = master['master_name']
-    else:
-        master_name = None
-    for item in ANWorker.scan():
-        if item.status in active_statuses:
-            if master_name is None or item.master_name == master_name:
+        for item in ANWorker.scan():
+            if item.status in active_statuses:
+                if item.master_name == master['master_name']:
+                    results.append( to_dict_ANW( item ) )
+    elif branch is None:
+        for item in ANWorker.scan():
+            if item.status in active_statuses:
                 results.append( to_dict_ANW( item ) )
     results.sort( key=lambda x: (x['cluster_type'], x['aws_region'], x['status']) )
     return results
