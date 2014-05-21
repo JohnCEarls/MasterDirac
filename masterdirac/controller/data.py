@@ -80,3 +80,6 @@ class Interface(serverinterface.ServerInterface):
         self._check_complete()
         return self._active
 
+
+    def _restart(self):
+        self.logger.warning("Restart unimplemented in data node")
