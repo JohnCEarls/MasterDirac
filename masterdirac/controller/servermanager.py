@@ -145,6 +145,7 @@ class ServerManager:
                 self.logger.info("%s(data server): has response" % k)
         for k,server in self.gpu_servers.iteritems():
             if server.get_responses():
+                server.handle_heartbeat()
                 self.logger.info("%s(gpu server): has response" % k)
         self.poll_sc_logging()
         return False

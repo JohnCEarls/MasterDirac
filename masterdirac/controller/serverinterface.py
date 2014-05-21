@@ -57,6 +57,9 @@ class ServerInterface(object):
             self.logger.warning("Unable to connect to [%s]" % self.command_q)
             return False
 
+    def restart(self):
+        self._restart()
+
     def terminate(self):
         self.logger.warning("Sending term signal")
         term_mess = {}
@@ -79,7 +82,3 @@ class ServerInterface(object):
         except Exception as e:
             self.logger.error("Attempted to delete %s" % self.response_q )
             self.logger.exception()
-
-
-            
-

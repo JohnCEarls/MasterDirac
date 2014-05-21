@@ -16,6 +16,7 @@ class Interface(serverinterface.ServerInterface):
         self.logger = logging.getLogger(self._unique)
         self.logger.info( "GPU Interface created")
         self._num_gpus = None
+        self._idle = 0
 
     def send_init(self, master_name ):
         """
@@ -82,6 +83,9 @@ class Interface(serverinterface.ServerInterface):
         js_mess = json.dumps( gpu_message )
         self.logger.debug("GPUInit message [%s]" % js_mess )
         return self._send_command( js_mess )
+    @property
+    def idle(self):
+        return self._idle
 
     def _get_data_settings(self, run): #k, data_sizes, block_sizes ):
         """
@@ -157,3 +161,18 @@ class Interface(serverinterface.ServerInterface):
             else:
                 self._num_gpus = 1
         return self._num_gpus
+
+    def _restart( self ):
+        gpu_message = {'message-type':'restart-notice'}
+        js_mess = json.dumps( gpu_message )
+        self._send_command( js_message )
+        self.logger.info("Restarting gpu server")
+
+
+    def handle_heartbeat(self):
+        while self.status_queue.count() > 0:
+            mess = self.status_queue.pop()
+            if mess['source-q'] == 0:
+                self._idle += 1
+            else:
+                self._idle = 0
