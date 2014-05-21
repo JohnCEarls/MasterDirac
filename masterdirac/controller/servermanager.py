@@ -125,11 +125,14 @@ class ServerManager:
         Checks for messages indicating that a worker server has started
         and is waiting for instructions
         """
+        self.logger.debug("Polling for server[%s]" % self.init_q.id )
         messages = self.init_q.get_messages( wait_time_seconds = timeout )
+        self.logger.debug("[%i] server init messages" % self.init_q.count() )
         for mess in messages:
             serv_mess = json.loads( mess.get_body() )
-            self.init_q.delete_message( mess )
-            self._handle_server_init( serv_mess )
+            self.logger.debug("Recieved init [%r]" % serv_mess)
+            if self._handle_server_init( serv_mess ):
+                self.init_q.delete_message( mess )
 
     def introspect(self):
         """
@@ -441,10 +444,10 @@ class ServerManager:
         self.logger.debug("Handling message %s" % json.dumps( message ) )
         if message['message-type'] == 'gpu-init':
             self.logger.info("Initializing gpu")
-            self._handle_gpu_init( message )
+            return self._handle_gpu_init( message )
         elif message['message-type'] == 'data-gen-init':
             self.logger.info("Initializing Data")
-            self._handle_data_init( message )
+            return self._handle_data_init( message )
         else:
             self.logger.error("Init. Message: %s" %  json.dumps( message ) )
             raise Exception("No initialization found in initialization message")
@@ -645,7 +648,6 @@ class ServerManager:
                     launch_mess))
                 self.logger.error( "Abort termination")
                 self._abort_launch( launch_mess, e )
-
         else:
             self.logger.error("Unhandled Launcher Message")
             self.logger.error("%r" % launch_mess )
@@ -746,16 +748,24 @@ class ServerManager:
                 if self.gpu_ids[inst_id][-1] == 0:
                     gpu_id = 1
             self.gpu_ids[inst_id] = [gpu_id]
-        serv.send_init( self.aws_locations['gpu'], self.block_sizes,
-                self.data_settings, gpu_id=gpu_id,
-                heartbeat_interval=self.base_heartbeat )
-        self.gpu_servers[serv._unique] = serv
+        
+        sent = serv.send_init(master_name= self.master_model['master_name'])
+        if sent is None:
+            return False
+        else:
+            self.gpu_servers[serv._unique] = serv
+            return True
+
+
 
     def _handle_data_init( self, message):
         serv = data.Interface( message )
         serv.send_init( self.aws_locations['data'], self.source_files,
                 self.network_settings, self.block_sizes, self.get_mem_max() )
         self.data_servers[serv._unique] = serv
+        #TODO: allow restart
+        return True
+
 
     def get_mem_max(self):
         """
@@ -788,13 +798,15 @@ class ServerManager:
         """
         Returns the Server Initialization Queue
         """
+
+        local_config = self._local_settings
         conn = boto.sqs.connect_to_region('us-east-1')
-        iq = conn.create_queue( self._init_q )
+        iq = conn.create_queue( local_config['init-queue'] )
         ctr = 0
         while not iq:
             time.sleep(max(ctr,60))
             self.logger.warning("Creating Server Initialization Queue")
-            iq = conn.create_queue( self._init_q )
+            iq = conn.create_queue( local_config['init-queue'] )
             ctr = 1.25 *ctr + 1
         return iq
 
