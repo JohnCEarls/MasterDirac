@@ -98,7 +98,7 @@ def set_system_defaults():
     item = ANSystemDefaults('loggingserver', 'Master')
     item.settings = {'directory':'/scratch/sgeadmin/logs',
         'log_filename':'None',
-        'bucket':'diraclog',
+        'bucket':'aurea-nebula-logging',
         'log_format':'%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         'interval_type':'M',
         'interval':1,
