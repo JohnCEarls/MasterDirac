@@ -232,7 +232,8 @@ def get_active_ANRun( run_id=None, master_id=None):
         return {}
     else:
         results = get_ANRun()
-        return [result for result in results if result['status'] in [INIT, ACTIVE]]
+        return [result for result in results if result['status'] in [INIT, ACTIVE, ACTIVE_ALL_SENT]]
+
 
 def delete_ANRun( run_id ):
     item = ANRun.get( run_id )
