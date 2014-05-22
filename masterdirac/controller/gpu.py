@@ -149,7 +149,7 @@ class Interface(serverinterface.ServerInterface):
                     self.logger.error("%s could not connect to %r, continuing..." % (
                         self._unique,
                         work ) )
-                    self.logger.exception()
+                    self.logger.exception("Could not get worker")
             elif run['status'] == run_mdl.ACTIVE:
                 return run
         return None
