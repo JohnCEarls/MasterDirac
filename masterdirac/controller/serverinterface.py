@@ -9,6 +9,7 @@ import collections
 class ServerInterface(object):
     def __init__(self, init_message):
         self.name = init_message['name']
+        self.cluster_name = init_message['cluster-name']
         self.command_q = init_message['command']
         self.response_q = init_message['response']
         self.zone = init_message['zone']
@@ -65,7 +66,9 @@ class ServerInterface(object):
         term_mess = {}
         term_mess['message-type'] = 'termination-notice'
         self._send_command(json.dumps(term_mess))
-        self._terminated = True
+
+    def is_terminated(self):
+        return self._terminated
 
     def delete_queues( self ):
         try:

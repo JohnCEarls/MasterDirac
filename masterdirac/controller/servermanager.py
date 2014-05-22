@@ -62,6 +62,8 @@ class ServerManager:
         self._master_model = self._get_master_model()
         self.logger.debug("exit __init__")
 
+   
+
     def manage_run( self ):
         logger = self.logger
         active_run = self.get_run()
@@ -143,12 +145,39 @@ class ServerManager:
         for k,server in self.data_servers.iteritems():
             if server.get_responses():
                 self.logger.info("%s(data server): has response" % k)
+
         for k,server in self.gpu_servers.iteritems():
             if server.get_responses():
                 server.handle_heartbeat()
-                self.logger.info("%s(gpu server): has response" % k)
+                self.logger.info("%s(gpu server): has response" % k)            
+            elif server.terminated:
+                server.delete_queues()
+
+                
         self.poll_sc_logging()
+        self.run_completed()
         return False
+
+    def run_completed( self ):
+        for run in run_mdl.get_active_ANRun():
+            if run['master_name'] != self._master_name:
+                #run does not belong to this master
+                continue
+            elif run['status']  == run_mdl.ACTIVE_ALL_SENT:
+                #the data nodes are done with this run
+                conn = boto.connect_sqs()
+                #branch
+                try:
+                    work = run['intercomm_settings']['sqs_from_data_to_gpu']
+                    work_queue = conn.get_queue( work )
+                    if work_queue is None or work_queue.count() == 0:
+                        run_mdl.update_ANRun( run['run_id'], status=run_mdl.COMPLETE )
+                        #TODO: delete data to gpu queue
+                except:
+                    self.logger.error("Attempted to mark %s complete. could not connect to %r, continuing..." % ( run['run_id'], work ) )
+                    self.logger.exception("Checking next run")
+
+
 
     def get_run( self ):
         """
@@ -649,6 +678,16 @@ class ServerManager:
                     launch_mess))
                 self.logger.error( "Abort termination")
                 self._abort_launch( launch_mess, e )
+        elif launch_mess['action'] == 'reassign-master':
+            try:
+                run_mdl.update_ANRun( launch_mess['run_id'], master_name=this._master_name)
+                mess = { 'status' : 'complete',
+                        'data' : launch_mess,
+                        'message': 'Reassigned master:%s' % launch_mess['run_id']}
+                self.launcher_q_out.write( Message( body=json.dumps( mess ) ) )
+            except Exception as e:
+                self.logger.error("%r" % launch_mess)
+                self.logger.exception("Unable to reassign master")
         else:
             self.logger.error("Unhandled Launcher Message")
             self.logger.error("%r" % launch_mess )

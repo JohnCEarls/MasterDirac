@@ -17,6 +17,7 @@ class Interface(serverinterface.ServerInterface):
         self.logger.info( "GPU Interface created")
         self._num_gpus = None
         self._idle = 0
+        self._restarting = False
 
     def send_init(self, master_name ):
         """
@@ -42,10 +43,12 @@ class Interface(serverinterface.ServerInterface):
         heartbeat_interval - how many runs before checking back home
         """
         active_run = self._get_gpu_run(master_name)
+        
         if not active_run:
             #nothing to do
             return None
         ic = active_run['intercomm_settings']
+        self._run_id = active_run['run_id']
         source_sqs = ic['sqs_from_data_to_gpu']
         result_sqs = ic['sqs_from_gpu_to_agg']
         source_s3 = ic['s3_from_data_to_gpu']
@@ -69,6 +72,7 @@ class Interface(serverinterface.ServerInterface):
         self._hb = heartbeat_interval
         self.logger.info("Initializing gpudirac-server" )
         gpu_message = {'message-type':'init-settings',
+                 'run-id' : active_run['run_id'], 
                  'result-sqs': result_sqs,
                  'source-sqs': source_sqs,
                  'source-s3': source_s3,
@@ -130,7 +134,7 @@ class Interface(serverinterface.ServerInterface):
     def _get_gpu_run( self, master_name ):
         for run in run_mdl.get_ANRun():
             if run['master_name'] != master_name:
-                #run does not belong to this set
+                #run does not belong to this master
                 continue
             elif run['status']  == run_mdl.ACTIVE_ALL_SENT:
                 #the data nodes are done with this run
@@ -165,14 +169,26 @@ class Interface(serverinterface.ServerInterface):
     def _restart( self ):
         gpu_message = {'message-type':'restart-notice'}
         js_mess = json.dumps( gpu_message )
-        self._send_command( js_message )
+        self._send_command( js_mess )
         self.logger.info("Restarting gpu server")
-
+        self._restarting = True
+ 
+    @property
+    def terminated( self ):
+        return self._terminated
 
     def handle_heartbeat(self):
-        while self.status_queue.count() > 0:
+        while len(self.status_queue) > 0:
             mess = self.status_queue.pop()
-            if mess['source-q'] == 0:
-                self._idle += 1
+            term = mess['terminating']
+            if term == 0:
+                if mess['source-q'] == 0:
+                    self._idle += 1
+                    if not self._restarting:
+                        run = run_mdl.get_ANRun( mess['run-id'] )
+                        if run['status'] == run_mdl.COMPLETE:
+                            self._restart()
+                else:
+                    self._idle = 0
             else:
-                self._idle = 0
+                self._terminated = True
