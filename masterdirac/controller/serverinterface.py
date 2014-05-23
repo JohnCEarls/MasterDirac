@@ -71,6 +71,9 @@ class ServerInterface(object):
         return self._terminated
 
     def delete_queues( self ):
+        self.logger.debug("not really deleting")
+        return
+        
         try:
             conn = boto.sqs.connect_to_region( 'us-east-1' )
             rq = conn.get_queue( self.response_q )
