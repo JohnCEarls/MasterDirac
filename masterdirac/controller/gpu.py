@@ -9,17 +9,27 @@ import serverinterface
 import masterdirac.models.run as run_mdl
 import numpy as np
 from masterdirac.utils import hddata_process, dtypes
+import masterdirac.models.server as svr_mdl
 
 class Interface(serverinterface.ServerInterface):
-    def __init__(self, init_message):
-        super( Interface, self ).__init__(init_message )
-        self.logger = logging.getLogger(self._unique)
+    def __init__(self, init_message, master_name):
+        super( Interface, self ).__init__(init_message, master_name )
+        self._gpu_id = init_message['gpu-id']
+        self.logger = logging.getLogger(self.unique_id)
         self.logger.info( "GPU Interface created")
         self._num_gpus = None
         self._idle = 0
         self._restarting = False
+        svr_mdl.insert_ANServer( self.cluster_name, self.server_id, svr_mdl.INIT)
 
-    def send_init(self, master_name ):
+    def handle_state(self):
+        state = self.status
+        if state == svr_mdl.INIT:
+            self.send_init()
+        if state == svr_mdl.TERMINATED:
+            self.delete_queues()
+
+    def send_init( self ):
         """
         Send initialization information
         Pertinant info pulled from run model in
@@ -42,11 +52,14 @@ class Interface(serverinterface.ServerInterface):
                                 masterdirac.utils.dtypes.to_index(np.dtype)
         heartbeat_interval - how many runs before checking back home
         """
-        active_run = self._get_gpu_run(master_name)
-        
+        active_run = self._get_gpu_run()
         if not active_run:
             #nothing to do
+            if self.status != svr_mdl.WAITING:
+                self.set_status( svr_mdl.WAITING )
             return None
+        self.set_status( svr_mdl.STARTING )
+        self._run_id = active_run['run_id']
         ic = active_run['intercomm_settings']
         self._run_id = active_run['run_id']
         source_sqs = ic['sqs_from_data_to_gpu']
@@ -87,11 +100,24 @@ class Interface(serverinterface.ServerInterface):
         js_mess = json.dumps( gpu_message )
         self.logger.debug("GPUInit message [%s]" % js_mess )
         return self._send_command( js_mess )
+
     @property
     def idle(self):
         return self._idle
 
-    def _get_data_settings(self, run): #k, data_sizes, block_sizes ):
+    @property
+    def gpu_id(self):
+        return self._gpu_id
+
+    @property
+    def server_id(self):
+        return "gpu-%i" % self.gpu_id
+
+    @property
+    def unique_id(self):
+        return "%s-%s" %( self.worker_id, self.server_id )
+
+    def _get_data_settings(self, run): 
         """
         Get an upper bound on the size of data structure s
         Returns max_bytes for  em, sm, gm, nm, rms, total
@@ -131,26 +157,12 @@ class Interface(serverinterface.ServerInterface):
         self._gpu_mem_req = em+sm+gm+rt+srt+rms
         return self._data_settings
 
-    def _get_gpu_run( self, master_name ):
+    def _get_gpu_run( self ):
         for run in run_mdl.get_ANRun():
-            if run['master_name'] != master_name:
+            if run['master_name'] != self._master_name:
                 #run does not belong to this master
                 continue
-            elif run['status']  == run_mdl.ACTIVE_ALL_SENT:
-                #the data nodes are done with this run
-                conn = boto.connect_sqs()
-                #branch
-                try:
-                    work = run['intercomm_settings']['sqs_from_data_to_gpu']
-                    work_queue = conn.get_queue( work )
-                    if work_queue.count() > 0:
-                        return run
-                except:
-                    self.logger.error("%s could not connect to %r, continuing..." % (
-                        self._unique,
-                        work ) )
-                    self.logger.exception("Could not get worker")
-            elif run['status'] == run_mdl.ACTIVE:
+            elif run['status'] in [ run_mdl.ACTIVE_ALL_SENT, run_mdl.ACTIVE]:
                 return run
         return None
 
@@ -171,22 +183,27 @@ class Interface(serverinterface.ServerInterface):
         js_mess = json.dumps( gpu_message )
         self._send_command( js_mess )
         self.logger.info("Restarting gpu server")
-        self._restarting = True
- 
+        self.set_status(svr_mdl.RESTARTING)
+
+
     @property
     def terminated( self ):
-        return self._terminated
+        return self.status == svr_mdl.TERMINATED
 
     def handle_heartbeat(self):
         while len(self.status_queue) > 0:
             mess = self.status_queue.pop()
+            if 'message' in mess:
+                if mess['message'] == 'terminated':
+                    self.set_status( svr_mdl.TERMINATED )
             term = mess['terminating']
             if term == 0:
                 if mess['source-q'] == 0:
                     self._idle += 1
-                    if not self._restarting:
-                        run = run_mdl.get_ANRun( mess['run-id'] )
+                    if not self.status == svr_mdl.RESTARTING:
+                        run = run_mdl.get_ANRun( self._run_id )
                         if run['status'] == run_mdl.COMPLETE:
+                            self._run_id = None
                             self._restart()
                 else:
                     self._idle = 0

@@ -15,6 +15,7 @@ INIT = 0
 STARTING = 10
 RESTARTING = 20
 RUNNING = 30
+WAITING = 35
 TERMINATING = 40
 TERMINATED = 50
 
@@ -25,7 +26,6 @@ class ANServer(Model):
     worker_id = UnicodeAttribute( hash_key=True )
     server_id = UnicodeAttribute( range_key=True )
     status = NumberAttribute( default=0 )
-
 
 def insert_ANServer( worker_id, server_id, status=0):
     item = ANServer( worker_id, server_id)

@@ -4,11 +4,14 @@ import logging
 import boto.ec2
 import boto.sqs
 import collections
+import masterdirac.models.worker as wkr_mdl
 
+import masterdirac.models.server as svr_mdl
 
 class ServerInterface(object):
-    def __init__(self, init_message):
+    def __init__(self, init_message,master_name):
         self.name = init_message['name']
+        self._master_name = master_name
         self.cluster_name = init_message['cluster-name']
         self.command_q = init_message['command']
         self.response_q = init_message['response']
@@ -19,6 +22,7 @@ class ServerInterface(object):
         self.logger = logging.getLogger(self._unique)
         self.status_queue = collections.deque()
         self._terminated = False
+        self._run_id = None
 
     @property
     def conn(self):
@@ -45,6 +49,30 @@ class ServerInterface(object):
                 responses = True
         return responses
 
+    @property
+    def worker_id(self):
+        if self._worker_id is None:
+            try:
+                wm = wkr_mdl.get_ANWorker( cluster_name = self.cluster_name )
+                if len(wm) > 0: 
+                    self._worker_id = wm[0]['worker_id']
+            except:
+                self.logger.exception("Unable to get worker_model for %s" % self.cluster_name)
+        if self._worker_id is None:
+            try:
+                self._terminated = True
+                self.terminate()
+            except:
+                self.logger.exception("Inconsistent state")
+        return self._worker_id
+
+    @propery
+    def worker_model(self):
+        return wkr_mdl._get_ANWorker( worker_id = self.worker_id )
+
+    def set_status(self, status):
+        svr_mdl.update_ANServer( self.cluster_name, self.server_id)
+
     def _send_command( self, message):
         """
         Sends an arbitrary message to this gpu's command queue
@@ -70,10 +98,11 @@ class ServerInterface(object):
     def is_terminated(self):
         return self._terminated
 
+    @property
+    def terminated(self):
+        return self.status == svr_mdl.TERMINATED
+
     def delete_queues( self ):
-        self.logger.debug("not really deleting")
-        return
-        
         try:
             conn = boto.sqs.connect_to_region( 'us-east-1' )
             rq = conn.get_queue( self.response_q )

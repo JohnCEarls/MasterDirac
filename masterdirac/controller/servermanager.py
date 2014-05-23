@@ -133,8 +133,7 @@ class ServerManager:
         for mess in messages:
             serv_mess = json.loads( mess.get_body() )
             self.logger.debug("Recieved init [%r]" % serv_mess)
-            if self._handle_server_init( serv_mess ):
-                self.init_q.delete_message( mess )
+            self._handle_server_init( serv_mess )
 
     def introspect(self):
         """
@@ -142,18 +141,25 @@ class ServerManager:
         Currently just grabs messages and puts them in deque
         returns whether to shutdown server
         """
+        poppable = []
         for k,server in self.data_servers.iteritems():
-            if server.get_responses():
-                self.logger.info("%s(data server): has response" % k)
+            server.handle_state()
+            if server.terminated:
+                server.delete_queues()
+                poppable.append(k)
+        for p in poppable:
+            self.data_servers.pop( p )
 
+        poppable = []
         for k,server in self.gpu_servers.iteritems():
             if server.get_responses():
                 server.handle_heartbeat()
-                self.logger.info("%s(gpu server): has response" % k)            
             elif server.terminated:
                 server.delete_queues()
+                poppable.append(k)
+        for p in poppable:
+            self.gpu_server.pop( p )
 
-                
         self.poll_sc_logging()
         self.run_completed()
         return False
@@ -177,11 +183,9 @@ class ServerManager:
                     self.logger.error("Attempted to mark %s complete. could not connect to %r, continuing..." % ( run['run_id'], work ) )
                     self.logger.exception("Checking next run")
 
-
-
     def get_run( self ):
         """
-        Look for active/scheduled runs
+        Look for active/init runs
         """
         self.logger.debug("Looking for current run")
         master_name = self._master_name
@@ -235,7 +239,6 @@ class ServerManager:
                     if type(v) == dict:
                         dct[k] = json_prep( v )
             return dct
-
         run_settings = self._run_model['run_settings']
         logger = self.logger
         logger.info('Adding metadata for this run')
@@ -274,7 +277,6 @@ class ServerManager:
                 return run_mdl.to_dict(run_item)
         return None
 
-
     def _configure_run( self, run_model):
         self.logger.debug( "Configuring Run [%r]" % run_model)
         self._run_model = run_model
@@ -289,8 +291,9 @@ class ServerManager:
             self.init_data()
         self.logger.debug("Loading Configs")
         self._load_run_config()
+        """
         self._configure_data()
-        self._configure_gpu(self._run_model['data_sizes'])
+        self._configure_gpu(self._run_model['data_sizes'])"""
 
     def data_is_initialized(self):
         """
@@ -328,12 +331,16 @@ class ServerManager:
                     run_id, strain, total_runs, shuffle, k = current_job
                     num_runs = min( chunksize, total_runs)
                     total_runs -= num_runs
-                    if total_runs > 0:
-                        self.work.append( ( run_id, strain,
-                            total_runs, shuffle, k ) )
-                    server.send_run(run_id, strain, num_runs, shuffle, k )
-                    cp_list.append( run_mdl.pack_checkpoint(
-                        run_id, num_runs, strain=strain) )
+                    sent = server.send_run(run_id, strain, num_runs, shuffle, k )
+                    if sent:
+                        if total_runs > 0:
+                            self.work.append( ( run_id, strain,
+                                total_runs, shuffle, k ) )
+                        cp_list.append( run_mdl.pack_checkpoint(
+                            run_id, num_runs, strain=strain) )
+                    else:
+                        self.work.append( current_job )
+                        self.logger.warning("Worker[%s] rejected job")
                 else:
                     self.logger.info("No jobs or all servers busy")
             if cp_list:
@@ -474,10 +481,10 @@ class ServerManager:
         self.logger.debug("Handling message %s" % json.dumps( message ) )
         if message['message-type'] == 'gpu-init':
             self.logger.info("Initializing gpu")
-            return self._handle_gpu_init( message )
+            self._handle_gpu_init( message )
         elif message['message-type'] == 'data-gen-init':
             self.logger.info("Initializing Data")
-            return self._handle_data_init( message )
+            self._handle_data_init( message )
         else:
             self.logger.error("Init. Message: %s" %  json.dumps( message ) )
             raise Exception("No initialization found in initialization message")
@@ -545,6 +552,10 @@ class ServerManager:
 
 
     def stop_server(self, worker_id ):
+        """
+        This needs to be patched to new setup
+        """
+        return
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
         if worker_model['status'] != wkr_mdl.RUNNING:
             self.logger.error(( 'Attempted to startup [%s]'
@@ -774,38 +785,12 @@ class ServerManager:
         """
         Manage gpu server startup.
         """
-        serv = gpu.Interface( message )
-        gpu_id = 0
-        if serv.num_gpus > 1:
-            inst_id = serv.instance_id
-            if inst_id in self.gpu_ids:
-                self.logger.warning(("Adding gpu server to already running gpu"
-                    " instance-id[%s], current config %r") %
-                    (inst_id, self.gpu_ids[inst_id]) )
-                #for now we just swap LRU
-                #DEBUG: need better logic here
-                self.logger.debug("***Revisit multigpu logic***")
-                if self.gpu_ids[inst_id][-1] == 0:
-                    gpu_id = 1
-            self.gpu_ids[inst_id] = [gpu_id]
-        
-        sent = serv.send_init(master_name= self.master_model['master_name'])
-        if sent is None:
-            return False
-        else:
-            self.gpu_servers[serv._unique] = serv
-            return True
+        serv = gpu.Interface( message, master_name = self._master_name )
+        self.gpu_servers[serv.unique_id] = serv
 
-
-
-    def _handle_data_init( self, message):
-        serv = data.Interface( message )
-        serv.send_init( self.aws_locations['data'], self.source_files,
-                self.network_settings, self.block_sizes, self.get_mem_max() )
-        self.data_servers[serv._unique] = serv
-        #TODO: allow restart
-        return True
-
+    def _handle_data_init( self, message, master_name = self._master_name ):
+        serv = data.Interface( message, master_name = self._master_name)
+        self.data_servers[serv.unique_id] = serv
 
     def get_mem_max(self):
         """

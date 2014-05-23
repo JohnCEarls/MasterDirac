@@ -223,13 +223,10 @@ def get_pending_ANRun():
         return [result for result in results if result['status'] in [CONFIG]]
 
 def get_active_ANRun( run_id=None, master_id=None):
+    #TODO: master id never used
+    #need to fix tcdir.../contro../run.py - ActiveRun.GET
     if run_id is not None:
         return get_ANRun( run_id )
-    elif master_id is not None:
-        for result in get_ANRun():
-            if result['master_id'] == master_id:
-                return result
-        return {}
     else:
         results = get_ANRun()
         return [result for result in results if result['status'] in [INIT, ACTIVE, ACTIVE_ALL_SENT]]
