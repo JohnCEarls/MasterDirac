@@ -19,20 +19,25 @@ class Interface(serverinterface.ServerInterface):
         svr_mdl.insert_ANServer( self.cluster_name, self.server_id, svr_mdl.INIT)
 
     def handle_state(self):
+        self.get_responses()
+        self.check_response()
         state = self.status
+        self.logger.debug("handle_state[%s]" % state)
         if state == svr_mdl.INIT:
             self.send_init()
+        elif state == svr_mdl.WAITING:
+            if run_mdl.get_ANRun( self._run_id )['status'] != run_mdl.ACTIVE:
+                self._run_id = None
+                self.restart()
         elif state == svr_mdl.TERMINATED:
             self.delete_queues()
 
     def send_init(self):
-
-        active_run = self._active_data_run()
+        self.logger.debug("Attempting to send init")
+        active_run = self._get_active_run()
         if active_run is None:
             self.logger.debug("No active runs")
             return
-
-        self.set_status(svr_mdl.STARTING)
         self._run_id = active_run['run_id']
         intercomm_settings = active_run['intercomm_settings']
         aws_locations = (
@@ -84,6 +89,7 @@ class Interface(serverinterface.ServerInterface):
         js_mess = json.dumps( data_message )
         self.logger.debug("DataInit message [%s]" % js_mess)
         self._send_command( js_mess )
+        self.set_status(svr_mdl.WAITING)
     
     @property
     def server_id(self):
@@ -111,6 +117,14 @@ class Interface(serverinterface.ServerInterface):
             self.logger.warning("Rec'd a send run for a run that is not initialized")
             return False
 
+    def restart( self ):
+        data_message = {'message-type':'restart-notice'}
+        js_mess = json.dumps( data_message )
+        self.logger.debug("Sending run message[%s]", js_mess)
+        self._send_command( js_mess )
+        self.set_status( svr_mdl.RESTARTING )
+
+
     def check_response(self):
         while len(self.status_queue) > 0:
             message = self.status_queue.popleft()
@@ -123,9 +137,9 @@ class Interface(serverinterface.ServerInterface):
         elif message['message-type'] == 'terminated':
             self.logger.info("%s terminated" % self.unique_id)
             self.set_status(svr_mdl.TERMINATED)
-        elif message['message-type'] == 'terminated':
+        elif message['message-type'] == 'restarting':
             self.logger.info("%s restarting" % self.unique_id)
-            self.set_status(svr_mdl.RESTARTING)
+            self.set_status(svr_mdl.INIT)
         else:
             self.logger.error("Error[Unexpected Response] : %s" %\
                     json.dumps( message ))
@@ -133,7 +147,7 @@ class Interface(serverinterface.ServerInterface):
 
     def _get_active_run( self ):
         for run in run_mdl.get_ANRun():
-            if run['master_id'] == self._master_name:
+            if run['master_name'] == self._master_name:
                 if run['status'] == run_mdl.ACTIVE:
                     return run
         return None
@@ -144,7 +158,7 @@ class Interface(serverinterface.ServerInterface):
         Is it currently working in a run
         """
         self.check_response()
-        return self.status == svr_mdl.RUNNING
+        return self.status != svr_mdl.WAITING
 
     def _restart(self):
         self.logger.warning("Restart unimplemented in data node")

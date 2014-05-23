@@ -23,6 +23,7 @@ class ServerInterface(object):
         self.status_queue = collections.deque()
         self._terminated = False
         self._run_id = None
+        self._worker_id = None
 
     @property
     def conn(self):
@@ -66,12 +67,16 @@ class ServerInterface(object):
                 self.logger.exception("Inconsistent state")
         return self._worker_id
 
-    @propery
+    @property
     def worker_model(self):
         return wkr_mdl._get_ANWorker( worker_id = self.worker_id )
 
+    @property
+    def status(self):
+        return svr_mdl.get_status( self.cluster_name, self.server_id )
+
     def set_status(self, status):
-        svr_mdl.update_ANServer( self.cluster_name, self.server_id)
+        svr_mdl.update_ANServer( self.cluster_name, self.server_id, status)
 
     def _send_command( self, message):
         """

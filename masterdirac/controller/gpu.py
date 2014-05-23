@@ -21,10 +21,16 @@ class Interface(serverinterface.ServerInterface):
         self._idle = 0
         self._restarting = False
         svr_mdl.insert_ANServer( self.cluster_name, self.server_id, svr_mdl.INIT)
+        self._waiting = 0
 
     def handle_state(self):
+        self.get_responses()
+        self.handle_heartbeat()
         state = self.status
+        self.logger.debug("state[%i]" % state)
         if state == svr_mdl.INIT:
+            self.send_init()
+        if state == svr_mdl.WAITING:
             self.send_init()
         if state == svr_mdl.TERMINATED:
             self.delete_queues()
@@ -59,6 +65,7 @@ class Interface(serverinterface.ServerInterface):
                 self.set_status( svr_mdl.WAITING )
             return None
         self.set_status( svr_mdl.STARTING )
+        self.logger.debug("Have a run %s" % active_run['run_id'])
         self._run_id = active_run['run_id']
         ic = active_run['intercomm_settings']
         self._run_id = active_run['run_id']
@@ -115,7 +122,7 @@ class Interface(serverinterface.ServerInterface):
 
     @property
     def unique_id(self):
-        return "%s-%s" %( self.worker_id, self.server_id )
+        return "%s-%s" %( self.cluster_name, self.server_id )
 
     def _get_data_settings(self, run): 
         """
@@ -196,15 +203,17 @@ class Interface(serverinterface.ServerInterface):
             if 'message' in mess:
                 if mess['message'] == 'terminated':
                     self.set_status( svr_mdl.TERMINATED )
+                    return
             term = mess['terminating']
             if term == 0:
                 if mess['source-q'] == 0:
-                    self._idle += 1
                     if not self.status == svr_mdl.RESTARTING:
                         run = run_mdl.get_ANRun( self._run_id )
                         if run['status'] == run_mdl.COMPLETE:
-                            self._run_id = None
-                            self._restart()
+                            self._idle += 1#count to 10 to see if done
+                            if self._idle > 10:
+                                self._run_id = None
+                                self._restart()
                 else:
                     self._idle = 0
             else:

@@ -48,6 +48,7 @@ class ServerManager:
         self.data_settings = None
         self._init_q = None
         self.work = collections.deque()
+        self.rc = collections.defaultdict(int)
         self.gpu_servers = {}
         self.data_servers = {}
         self.aws_locations = {}
@@ -88,6 +89,7 @@ class ServerManager:
             if not self.has_work():
                 self._run_model = run_mdl.update_ANRun(self._run_model['run_id'],
                         status = run_mdl.ACTIVE_ALL_SENT )
+                self.status = master_mdl.INIT
                 run_mdl.compress_checkpoint( self._run_model['run_id'] )
         logger.debug("Exiting manage_run")
 
@@ -134,6 +136,7 @@ class ServerManager:
             serv_mess = json.loads( mess.get_body() )
             self.logger.debug("Recieved init [%r]" % serv_mess)
             self._handle_server_init( serv_mess )
+            self.init_q.delete_message( mess )
 
     def introspect(self):
         """
@@ -141,6 +144,7 @@ class ServerManager:
         Currently just grabs messages and puts them in deque
         returns whether to shutdown server
         """
+        self.logger.debug("introspect")
         poppable = []
         for k,server in self.data_servers.iteritems():
             server.handle_state()
@@ -152,13 +156,14 @@ class ServerManager:
 
         poppable = []
         for k,server in self.gpu_servers.iteritems():
-            if server.get_responses():
-                server.handle_heartbeat()
-            elif server.terminated:
-                server.delete_queues()
+            self.logger.debug("Handling state")
+            server.handle_state()
+            if server.terminated:
+                self.logger.warning(" add delete quees when debugged")
+                #server.delete_queues()
                 poppable.append(k)
         for p in poppable:
-            self.gpu_server.pop( p )
+            self.gpu_servers.pop( p )
 
         self.poll_sc_logging()
         self.run_completed()
@@ -174,10 +179,17 @@ class ServerManager:
                 conn = boto.connect_sqs()
                 #branch
                 try:
+                    #if work q empy and result q is not growing, run is complete
                     work = run['intercomm_settings']['sqs_from_data_to_gpu']
+                    result = run['intercomm_settings']['sqs_from_gpu_to_agg']
                     work_queue = conn.get_queue( work )
                     if work_queue is None or work_queue.count() == 0:
-                        run_mdl.update_ANRun( run['run_id'], status=run_mdl.COMPLETE )
+                        rq = conn.get_queue( result )
+                        rcount = rq.count()
+                        if self._rc[run['run_id']] == rcount:
+                            run_mdl.update_ANRun( run['run_id'], status=run_mdl.COMPLETE )
+                        else:
+                            self._rc[run['run_id']] = rcount
                         #TODO: delete data to gpu queue
                 except:
                     self.logger.error("Attempted to mark %s complete. could not connect to %r, continuing..." % ( run['run_id'], work ) )
@@ -488,6 +500,7 @@ class ServerManager:
         else:
             self.logger.error("Init. Message: %s" %  json.dumps( message ) )
             raise Exception("No initialization found in initialization message")
+        return True
 
     def _handle_sc_logging(self, mess ):
         self.logger.info("Starcluster Log: %r" % mess)
@@ -555,7 +568,6 @@ class ServerManager:
         """
         This needs to be patched to new setup
         """
-        return
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
         if worker_model['status'] != wkr_mdl.RUNNING:
             self.logger.error(( 'Attempted to startup [%s]'
@@ -788,7 +800,7 @@ class ServerManager:
         serv = gpu.Interface( message, master_name = self._master_name )
         self.gpu_servers[serv.unique_id] = serv
 
-    def _handle_data_init( self, message, master_name = self._master_name ):
+    def _handle_data_init( self, message ):
         serv = data.Interface( message, master_name = self._master_name)
         self.data_servers[serv.unique_id] = serv
 
