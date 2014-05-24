@@ -24,6 +24,7 @@ class ServerInterface(object):
         self._terminated = False
         self._run_id = None
         self._worker_id = None
+        self._status = None
 
     @property
     def conn(self):
@@ -73,10 +74,16 @@ class ServerInterface(object):
 
     @property
     def status(self):
-        return svr_mdl.get_status( self.cluster_name, self.server_id )
+        if self._status is None:
+            self._status =svr_mdl.get_status( self.cluster_name, self.server_id )
+        return self._status
 
     def set_status(self, status):
-        svr_mdl.update_ANServer( self.cluster_name, self.server_id, status)
+        try:
+            svr_mdl.update_ANServer( self.cluster_name, self.server_id, status)
+        except:
+            svr_mdl.insert_ANServer( self.cluster_name, self.server_id, status)
+        self._status = status
 
     def _send_command( self, message):
         """

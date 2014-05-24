@@ -15,8 +15,7 @@ class Interface(serverinterface.ServerInterface):
         self.logger = logging.getLogger(self.unique_id)
         self.logger.info("Data Interface created")
         self.num_nodes = init_message['num-nodes']
-        self._active = False
-        svr_mdl.insert_ANServer( self.cluster_name, self.server_id, svr_mdl.INIT)
+        self.set_status( svr_mdl.INIT )
 
     def handle_state(self):
         self.get_responses()
