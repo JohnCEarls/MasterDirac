@@ -10,6 +10,7 @@ import masterdirac.models.run as run_mdl
 import numpy as np
 from masterdirac.utils import hddata_process, dtypes
 import masterdirac.models.server as svr_mdl
+from datetime import datetime, timedelta
 
 class Interface(serverinterface.ServerInterface):
     def __init__(self, init_message, master_name):
@@ -18,6 +19,7 @@ class Interface(serverinterface.ServerInterface):
         self.logger = logging.getLogger(self.unique_id)
         self.logger.info( "GPU Interface created")
         self._num_gpus = None
+        self._complete_timeout = None
         self._idle = 0
         self._restarting = False
         svr_mdl.insert_ANServer( self.cluster_name, self.server_id, svr_mdl.INIT)
@@ -192,7 +194,6 @@ class Interface(serverinterface.ServerInterface):
         self.logger.info("Restarting gpu server")
         self.set_status(svr_mdl.RESTARTING)
 
-
     @property
     def terminated( self ):
         return self.status == svr_mdl.TERMINATED
@@ -210,11 +211,13 @@ class Interface(serverinterface.ServerInterface):
                     if not self.status == svr_mdl.RESTARTING:
                         run = run_mdl.get_ANRun( self._run_id )
                         if run['status'] == run_mdl.COMPLETE:
-                            self._idle += 1#count to 10 to see if done
-                            if self._idle > 10:
+                            if self._complete_timeout is None:
+                                self._complete_timeout = datetime.now() + timedelta( minutes=1 )
+                            if self._complete_timeout < datetime.now():
                                 self._run_id = None
                                 self._restart()
                 else:
+                    self._complete_timeout = None
                     self._idle = 0
             else:
                 self._terminated = True
