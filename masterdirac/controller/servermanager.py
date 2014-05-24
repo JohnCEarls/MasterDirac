@@ -2,7 +2,7 @@ import json
 import logging
 import collections
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import select
 import os
 import os.path
@@ -48,7 +48,8 @@ class ServerManager:
         self.data_settings = None
         self._init_q = None
         self.work = collections.deque()
-        self.rc = collections.defaultdict(int)
+        self._rc = collections.defaultdict(int)
+        self._complete_timeout = None
         self.gpu_servers = {}
         self.data_servers = {}
         self.aws_locations = {}
@@ -179,7 +180,11 @@ class ServerManager:
                 conn = boto.connect_sqs()
                 #branch
                 try:
-                    #if work q empy and result q is not growing, run is complete
+                    #if work q is empy and result q is not growing, 
+                    #run is complete
+                    #hedging our bets by making sure this 
+                    #has been true for at least
+                    #60 seconds
                     work = run['intercomm_settings']['sqs_from_data_to_gpu']
                     result = run['intercomm_settings']['sqs_from_gpu_to_agg']
                     work_queue = conn.get_queue( work )
@@ -187,12 +192,21 @@ class ServerManager:
                         rq = conn.get_queue( result )
                         rcount = rq.count()
                         if self._rc[run['run_id']] == rcount:
-                            run_mdl.update_ANRun( run['run_id'], status=run_mdl.COMPLETE )
+                            if self._complete_timeout is None:
+                                self._complete_timeout = datetime.now() + timedelta( minutes=1 )
+                            if self._complete_timeout < datetime.now():
+                                self.logger.info("Marking %s complete" % (
+                                    run['run_id']))
+                                run_mdl.update_ANRun( run['run_id'], 
+                                                      status=run_mdl.COMPLETE )
+                                self._complete_timeout = None
                         else:
+                            self._complete_timeout = None
                             self._rc[run['run_id']] = rcount
                         #TODO: delete data to gpu queue
                 except:
-                    self.logger.error("Attempted to mark %s complete. could not connect to %r, continuing..." % ( run['run_id'], work ) )
+                    self.logger.error("Failed to mark %s complete" % ( 
+                        run['run_id']) )
                     self.logger.exception("Checking next run")
 
     def get_run( self ):
