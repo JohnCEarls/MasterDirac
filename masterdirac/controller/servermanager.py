@@ -54,6 +54,7 @@ class ServerManager:
         self.data_servers = {}
         self.aws_locations = {}
         self.gpu_ids = {}
+        self._update_worker_state = False 
         self.cluster_startup_processes = []
         self.cluster_termination_processes = []
         self._master_name = master_name
@@ -146,8 +147,15 @@ class ServerManager:
         returns whether to shutdown server
         """
         self.logger.debug("introspect")
+        #a started process has returned.
+        #may have a new worker state
+        state_change = self.check_cluster_state()
+        if state_change:
+            self.logger.info("A subprocess has changed state")
         poppable = []
         for k,server in self.data_servers.iteritems():
+            if state_change:
+                server.refresh_status()
             server.handle_state()
             if server.terminated:
                 server.delete_queues()
@@ -157,7 +165,8 @@ class ServerManager:
 
         poppable = []
         for k,server in self.gpu_servers.iteritems():
-            self.logger.debug("Handling state")
+            if state_change:
+                server.refresh_status()
             server.handle_state()
             if server.terminated:
                 self.logger.warning(" add delete quees when debugged")
@@ -616,6 +625,29 @@ class ServerManager:
         else:
             raise Exception('unimplemented')
 
+    def check_cluster_state(self):
+        """
+        See if subprocesses have finished. 
+        Returns true if any subprocess has returned
+        """
+        new_csp = []
+        update = False
+        for p in self.cluster_startup_processes:
+            p.join(1)
+            if p.is_alive():
+                new_csp.append(p)
+            else:
+                update = True
+        self.cluster_startup_processes = new_csp
+        new_ctp = []
+        for p in self.cluster_termination_processes:
+            p.join(1)
+            if p.is_alive():
+                new_ctp.append(p)
+            else:
+                update = True
+        self.cluster_termination_processes = new_ctp
+        return update
 
 
     def launch_cluster(self, worker_id ):
@@ -657,6 +689,7 @@ class ServerManager:
         else:
             self.logger.info('Cluster is not running, mark with error')
             wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.TERMINATED_WITH_ERROR)
+            self._update_worker_state = True
 
     def _handle_launcher( self, launch_mess):
         """
