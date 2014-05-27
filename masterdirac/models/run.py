@@ -1,7 +1,8 @@
 from pynamodb.models import Model
 from pynamodb.attributes import (UnicodeAttribute, UTCDateTimeAttribute,
-        NumberAttribute, UnicodeSetAttribute, JSONAttribute)
+        NumberAttribute, UnicodeSetAttribute, JSONAttribute, BooleanAttribute)
 from datetime import datetime
+
 import json
 import collections
 import os.path
@@ -40,6 +41,57 @@ class ANRunCheckpoint(Model):
     date_created = UnicodeAttribute( range_key = True )
     num_sent = NumberAttribute( default=0 )
     strain = UnicodeAttribute( default='None' )
+
+class ANRunArchive(Model):
+    class Meta:
+        table_name = 'aurea-nebula-run-archive'
+        region = 'us-east-1'
+    run_id = UnicodeAttribute( hash_key = True )
+    archive_id = UnicodeAttribute( range_key = True )
+    count = NumberAttribute( default = 0 )
+    bucket = UnicodeAttribute( default='')
+    path = UnicodeAttribute( default='')
+    archive_manifest = UnicodeAttribute( default='')
+    truth = BooleanAttribute( default=False)
+
+def insert_ANRunArchive( run_id, archive_id, count, bucket, archive_manifest, path=None, truth=False):
+    item = ANRunArchive( run_id, archive_id)
+    item.count = count
+    item.bucket = bucket
+    item.archive_manifest = archive_manifest
+    item.truth=truth
+    if path is None:
+        item.path = ''
+    else:
+        item.path = path
+
+def get_ANRunArchive(run_id, archive_id = None):
+    def to_dict(item):
+        res = {}
+        res['run_id'] = item.run_id
+        res['count'] = item.count 
+        res['bucket'] = item.bucket 
+        res['archive_manifest'] = item.archive_manifest 
+        res['truth'] = item.truth
+        if item.path is '':
+            res['path'] = None 
+        else:
+           res['path'] = item.path 
+        return res
+
+    if archive_id is None:
+        res = []
+        for item in ANRunArchive.get(run_id):
+            res.append( to_dict( item ) )
+    else:
+        return to_dict(ANRunArchive.get(run_id, archive_id))
+
+
+
+
+
+
+
 
 def pack_checkpoint( run_id, num_sent, date_created=None, strain=None):
     if date_created is None:
