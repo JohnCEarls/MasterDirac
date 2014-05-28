@@ -15,8 +15,8 @@ def delete(q_name):
 sqs = boto.connect_sqs()
 for queue in sqs.get_all_queues():
     if delete(queue.name):
-        print "Deleting %s" % queue.name
+        print "Deleting %s match pattern" % queue.name
         queue.delete()
     elif queue.count() == 0:
-        print "Deleting %s" % queue.name
+        print "Deleting %s empty" % queue.name
         queue.delete()
