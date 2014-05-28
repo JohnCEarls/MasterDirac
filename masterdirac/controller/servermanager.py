@@ -1239,6 +1239,10 @@ def stop_gpu( worker_id ):
     gpu_daemon( worker_id, gpu_id=1, action = 'stop')
     wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY)
 
+def restart_gpu( worker_id ):
+    gpu_daemon( worker_id, gpu_id=0, action = 'restart')
+    gpu_daemon( worker_id, gpu_id=1, action = 'restart')
+
 def status_gpu( worker_id ):
     """
     The entry subprocess for starting a dual gpu cluster
@@ -1258,6 +1262,9 @@ def stop_data( worker_id ):
     data_daemon( worker_id, action="stop")
     wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY)
 
+def restart_data( worker_id ):
+    data_daemon( worker_id, action="restart")
+    wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY)
 
 def gpu_logserver_daemon( worker_id, action='start'):
     """
@@ -1307,7 +1314,7 @@ def gpu_daemon( worker_id, gpu_id=0, action='start'):
     worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
     master_name = worker_model['master_name']
     cluster_name = worker_model['cluster_name']
-    valid_actions = ['start', 'stop', 'status']
+    valid_actions = ['start', 'stop', 'status', 'restart']
     assert action in valid_actions, "%s is not a valid action for gpu" % action
     base_message = {
                         'worker_id' : worker_id,
@@ -1328,6 +1335,8 @@ def gpu_daemon( worker_id, gpu_id=0, action='start'):
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh status'" % gpu_id
     if action == 'stop':
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh stop'" % gpu_id
+    if action == 'restart':
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh restart'" % gpu_id
     base_message['command'] = sc_command
     sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
     log_subprocess_messages( sc_p, q, base_message)
@@ -1341,7 +1350,7 @@ def data_daemon( worker_id, action="start"):
     worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
     master_name = worker_model['master_name']
     cluster_name = worker_model['cluster_name']
-    valid_actions = ['start', 'stop', 'status']
+    valid_actions = ['start', 'stop', 'status', 'restart']
     assert action in valid_actions, "%s is not a valid action for data" % action
     base_message = {
                         'worker_id' : worker_id,
@@ -1361,6 +1370,8 @@ def data_daemon( worker_id, action="start"):
         sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh status'"
     if action == 'stop':
         sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh stop'"
+    if action == 'restart':
+        sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh restart'"
     base_message['command'] = sc_command
     print sc_command
     sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )

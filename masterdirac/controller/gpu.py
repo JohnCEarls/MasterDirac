@@ -11,6 +11,7 @@ import numpy as np
 from masterdirac.utils import hddata_process, dtypes
 import masterdirac.models.server as svr_mdl
 from datetime import datetime, timedelta
+import servermanager as sm
 
 class Interface(serverinterface.ServerInterface):
     def __init__(self, init_message, master_name):
@@ -33,10 +34,12 @@ class Interface(serverinterface.ServerInterface):
         self.logger.debug("state[%i]" % state)
         if state == svr_mdl.INIT:
             self.send_init()
-        if state == svr_mdl.WAITING:
+        elif state == svr_mdl.WAITING:
             self.send_init()
-        if state == svr_mdl.TERMINATED:
+        elif state == svr_mdl.TERMINATED:
             self.delete_queues()
+        elif state==svr_mdl.RESTARTING and self._restart_timeout < datetime.now():
+            self.hard_restart()
 
     def send_init( self ):
         """
@@ -193,6 +196,7 @@ class Interface(serverinterface.ServerInterface):
         js_mess = json.dumps( gpu_message )
         self._send_command( js_mess )
         self.logger.info("Restarting gpu server")
+        self._restart_timeout = datetime.now() + timedelta( minutes=2 )
         self.set_status(svr_mdl.RESTARTING)
 
     @property
@@ -222,3 +226,10 @@ class Interface(serverinterface.ServerInterface):
                     self._idle = 0
             else:
                 self._terminated = True
+
+    def hard_restart(self):
+        worker_id = self.worker_id
+        restart_process = multiprocessing.Process( target = sm.restart_gpu,
+            args=( worker_id, ),
+            name=worker_id)
+        restart_process.start()
