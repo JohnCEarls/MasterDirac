@@ -193,7 +193,9 @@ class ServerManager:
                     #run is complete
                     #hedging our bets by making sure this 
                     #has been true for at least
-                    #60 seconds
+                    #60 seconds + the queue timeout so messages that are pending
+                    #are shown
+
                     work = run['intercomm_settings']['sqs_from_data_to_gpu']
                     result = run['intercomm_settings']['sqs_from_gpu_to_agg']
                     work_queue = conn.get_queue( work )
@@ -202,8 +204,8 @@ class ServerManager:
                         rcount = rq.count()
                         if self._rc[run['run_id']] == rcount:
                             if self._complete_timeout is None:
-                                self._complete_timeout = datetime.now() + timedelta( minutes=1 )
-                            if self._complete_timeout < datetime.now():
+                                self._complete_timeout = datetime.now() + timedelta( minutes= 1, seconds=rq.get_timeout() )
+                            elif self._complete_timeout < datetime.now():
                                 self.logger.info("Marking %s complete" % (
                                     run['run_id']))
                                 run_mdl.update_ANRun( run['run_id'], 
@@ -213,6 +215,9 @@ class ServerManager:
                             self._complete_timeout = None
                             self._rc[run['run_id']] = rcount
                         #TODO: delete data to gpu queue
+                    else:
+                        self._complete_timeout = None
+                        self._rc[run['run_id']] = rcount
                 except:
                     self.logger.error("Failed to mark %s complete" % ( 
                         run['run_id']) )
