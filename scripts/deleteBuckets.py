@@ -1,9 +1,14 @@
 import boto
 from boto.exception import  S3ResponseError
 from boto.s3.lifecycle import Lifecycle,Expiration
+deletable = ['ndp-from-gpu-to-agg-bioc-test0', 'diraclog-dev']
 def delete(bucket_name):
-    if bucket_name == 'ndp-from-data-to-gpu-bioc-test0':
+    if bucket_name in deletable:
         return True
+    prefix = 'an-from-data-to-gpu-'
+    if bucket_name[:len(prefix)] == prefix:
+        return True
+    return False
 s3 = boto.connect_s3()
 del_all_pattern = '%s-lc-delete-all'
 for b in s3.get_all_buckets():
@@ -22,7 +27,7 @@ for b in s3.get_all_buckets():
             if sre.error_code == 'NoSuchLifecycleConfiguration':
                 print "Setting deletion lifecycle rule"
                 lf = Lifecycle()
-                lf.add_rule( id=del_all_pattern % b.name, expiration=Expiration(days=1),
+                lf.add_rule( id=del_all_pattern % b.name, expiration=Expiration(days=3),
                         prefix='', status='Enabled',transition=None  )
                 b.configure_lifecycle(lf)
 
