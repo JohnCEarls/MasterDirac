@@ -54,6 +54,7 @@ class ServerManager:
         self.data_servers = {}
         self.aws_locations = {}
         self.gpu_ids = {}
+        self._update_worker_state = False 
         self.cluster_startup_processes = []
         self.cluster_termination_processes = []
         self._master_name = master_name
@@ -146,8 +147,15 @@ class ServerManager:
         returns whether to shutdown server
         """
         self.logger.debug("introspect")
+        #a started process has returned.
+        #may have a new worker state
+        state_change = self.check_cluster_state()
+        if state_change:
+            self.logger.info("A subprocess has changed state")
         poppable = []
         for k,server in self.data_servers.iteritems():
+            if state_change:
+                server.refresh_status()
             server.handle_state()
             if server.terminated:
                 server.delete_queues()
@@ -157,7 +165,8 @@ class ServerManager:
 
         poppable = []
         for k,server in self.gpu_servers.iteritems():
-            self.logger.debug("Handling state")
+            if state_change:
+                server.refresh_status()
             server.handle_state()
             if server.terminated:
                 self.logger.warning(" add delete quees when debugged")
@@ -616,6 +625,29 @@ class ServerManager:
         else:
             raise Exception('unimplemented')
 
+    def check_cluster_state(self):
+        """
+        See if subprocesses have finished. 
+        Returns true if any subprocess has returned
+        """
+        new_csp = []
+        update = False
+        for p in self.cluster_startup_processes:
+            p.join(1)
+            if p.is_alive():
+                new_csp.append(p)
+            else:
+                update = True
+        self.cluster_startup_processes = new_csp
+        new_ctp = []
+        for p in self.cluster_termination_processes:
+            p.join(1)
+            if p.is_alive():
+                new_ctp.append(p)
+            else:
+                update = True
+        self.cluster_termination_processes = new_ctp
+        return update
 
 
     def launch_cluster(self, worker_id ):
@@ -657,6 +689,7 @@ class ServerManager:
         else:
             self.logger.info('Cluster is not running, mark with error')
             wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.TERMINATED_WITH_ERROR)
+            self._update_worker_state = True
 
     def _handle_launcher( self, launch_mess):
         """
@@ -1206,6 +1239,10 @@ def stop_gpu( worker_id ):
     gpu_daemon( worker_id, gpu_id=1, action = 'stop')
     wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY)
 
+def restart_gpu( worker_id ):
+    gpu_daemon( worker_id, gpu_id=0, action = 'restart')
+    gpu_daemon( worker_id, gpu_id=1, action = 'restart')
+
 def status_gpu( worker_id ):
     """
     The entry subprocess for starting a dual gpu cluster
@@ -1225,6 +1262,9 @@ def stop_data( worker_id ):
     data_daemon( worker_id, action="stop")
     wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY)
 
+def restart_data( worker_id ):
+    data_daemon( worker_id, action="restart")
+    wkr_mdl.update_ANWorker( worker_id, status=wkr_mdl.READY)
 
 def gpu_logserver_daemon( worker_id, action='start'):
     """
@@ -1274,7 +1314,7 @@ def gpu_daemon( worker_id, gpu_id=0, action='start'):
     worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
     master_name = worker_model['master_name']
     cluster_name = worker_model['cluster_name']
-    valid_actions = ['start', 'stop', 'status']
+    valid_actions = ['start', 'stop', 'status', 'restart']
     assert action in valid_actions, "%s is not a valid action for gpu" % action
     base_message = {
                         'worker_id' : worker_id,
@@ -1295,6 +1335,8 @@ def gpu_daemon( worker_id, gpu_id=0, action='start'):
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh status'" % gpu_id
     if action == 'stop':
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh stop'" % gpu_id
+    if action == 'restart':
+        sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh restart'" % gpu_id
     base_message['command'] = sc_command
     sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )
     log_subprocess_messages( sc_p, q, base_message)
@@ -1308,7 +1350,7 @@ def data_daemon( worker_id, action="start"):
     worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
     master_name = worker_model['master_name']
     cluster_name = worker_model['cluster_name']
-    valid_actions = ['start', 'stop', 'status']
+    valid_actions = ['start', 'stop', 'status', 'restart']
     assert action in valid_actions, "%s is not a valid action for data" % action
     base_message = {
                         'worker_id' : worker_id,
@@ -1328,6 +1370,8 @@ def data_daemon( worker_id, action="start"):
         sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh status'"
     if action == 'stop':
         sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh stop'"
+    if action == 'restart':
+        sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh restart'"
     base_message['command'] = sc_command
     print sc_command
     sc_p = subprocess.Popen( sc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True )

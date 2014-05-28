@@ -85,6 +85,10 @@ class ServerInterface(object):
             svr_mdl.insert_ANServer( self.cluster_name, self.server_id, status)
         self._status = status
 
+    def refresh_status(self):
+        self._status = None
+        return self.status
+
     def _send_command( self, message):
         """
         Sends an arbitrary message to this gpu's command queue

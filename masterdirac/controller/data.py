@@ -8,6 +8,7 @@ from collections import deque
 import serverinterface
 import masterdirac.models.server as svr_mdl
 import masterdirac.models.run as run_mdl
+import servermanager as sm
 
 class Interface(serverinterface.ServerInterface):
     def __init__(self, init_message, master_name):
@@ -30,6 +31,8 @@ class Interface(serverinterface.ServerInterface):
                 self.restart()
         elif state == svr_mdl.TERMINATED:
             self.delete_queues()
+        elif state==svr_mdl.RESTARTING and self._restart_timeout < datetime.now():
+            self.hard_restart()
 
     def send_init(self):
         self.logger.debug("Attempting to send init")
@@ -161,3 +164,10 @@ class Interface(serverinterface.ServerInterface):
 
     def _restart(self):
         self.logger.warning("Restart unimplemented in data node")
+        
+    def hard_restart(self):
+            worker_id = self.worker_id
+            restart_process = multiprocessing.Process( target = sm.restart_data,
+                args=( worker_id, ),
+                name=worker_id)
+            restart_process.start()
