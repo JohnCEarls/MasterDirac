@@ -12,6 +12,7 @@ from pandas import DataFrame
 from boto.dynamodb2.table import Table
 from boto.exception import S3ResponseError
 from boto.s3.connection import Location
+import masterdirac.utils.datatransfer as dt
 
 join = os.path.join
 
@@ -194,19 +195,12 @@ class HDDataGen:
         Writes the dataframe(cleaned and aggregated source data) and the
         metadata file to the given S3 bucket
         """
-        dataframe_name = dest_data['dataframe_file']
-        bucket_name = dest_data['working_bucket']
         self.logger.info("Sending cleaned dataframe to s3://%s/%s" % (
-            bucket_name, dataframe_name) )
-        conn = boto.connect_s3()
-        bucket = conn.create_bucket(bucket_name, location=location)
-        dataframe.to_pickle('temp.tmp')
-        for fname in [dataframe_name]:
-            k = Key(bucket)
-            k.key = dataframe_name
-            k.storage_class = 'REDUCED_REDUNDANCY'
-            k.set_contents_from_filename('temp.tmp')
-        os.remove('temp.tmp')
+                dest_data['working_bucket'],
+                dest_data['dataframe_file']) )
+        dt.write_dataframe_to_s3(dataframe,
+                dest_data['working_bucket'],
+                dest_data['dataframe_file'])
 
     def _estimate_net_map( self, ng2pm ):
         gn = global_net_genes = set( ng2pm.keys() )
@@ -214,7 +208,9 @@ class HDDataGen:
         return nm_size
 
 if __name__ == "__main__":
-    logging.basicConfig(filename='/scratch/sgeadmin/hddata_process.log', level=logging.INFO,format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging.basicConfig(filename='/scratch/sgeadmin/hddata_process.log', 
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logging.info("Starting... hddata_process.py")
 
     """
