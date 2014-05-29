@@ -217,7 +217,7 @@ class ServerManager:
                         #TODO: delete data to gpu queue
                     else:
                         self._complete_timeout = None
-                        self._rc[run['run_id']] = rcount
+                        self._rc[run['run_id']] = -1 
                 except:
                     self.logger.error("Failed to mark %s complete" % ( 
                         run['run_id']) )
