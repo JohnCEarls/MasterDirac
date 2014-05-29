@@ -26,7 +26,9 @@ class Interface(serverinterface.ServerInterface):
         if state == svr_mdl.INIT:
             self.send_init()
         elif state == svr_mdl.WAITING:
-            if run_mdl.get_ANRun( self._run_id )['status'] != run_mdl.ACTIVE:
+            if self._run_id is None:
+                self.restart()
+            elif run_mdl.get_ANRun( self._run_id )['status'] != run_mdl.ACTIVE:
                 self._run_id = None
                 self.restart()
         elif state == svr_mdl.TERMINATED:
