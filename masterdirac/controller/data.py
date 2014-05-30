@@ -9,10 +9,13 @@ import serverinterface
 import masterdirac.models.server as svr_mdl
 import masterdirac.models.run as run_mdl
 import servermanager as sm
+from datetime import datetime, timedelta
+import multiprocessing
 
 class Interface(serverinterface.ServerInterface):
     def __init__(self, init_message, master_name):
         super( Interface, self ).__init__(init_message, master_name )
+
         self.logger = logging.getLogger(self.unique_id)
         self.logger.info("Data Interface created")
         self.num_nodes = init_message['num-nodes']
@@ -127,6 +130,7 @@ class Interface(serverinterface.ServerInterface):
         self.logger.debug("Sending run message[%s]", js_mess)
         self._send_command( js_mess )
         self.set_status( svr_mdl.RESTARTING )
+        self._restart_timeout = datetime.now() + timedelta( minutes=2 )
 
 
     def check_response(self):

@@ -313,7 +313,7 @@ class ServerManager:
         return None
 
     def _configure_run( self, run_model):
-        self.logger.debug( "Configuring Run [%r]" % run_model)
+        self.logger.debug( "Configuring Run [%s]" % run_model['run_id'])
         self._run_model = run_model
         if not self.source_data_exists():
             run_mdl.update_ANRun(self._run_model['run_id'],
@@ -526,7 +526,6 @@ class ServerManager:
         return True
 
     def _handle_sc_logging(self, mess ):
-        self.logger.info("Starcluster Log: %r" % mess)
         lgt=''
         if mess['type'] == 'system':
             lgt = '-success'

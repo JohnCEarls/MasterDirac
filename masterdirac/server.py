@@ -23,14 +23,18 @@ def main():
     logger.info( "Starting ServerManager" )
     manager = sm.ServerManager( get_master_name()  )
     terminate = False
-    while not terminate:
-        #handle any available runs
-        manager.manage_run()
-        #check for requests from web to manage servers
-        manager.poll_launch_requests( timeout=2 )
-        #check for requests from cluster to join the party
-        manager.poll_for_server( timeout=2)
-        #housekeeping, this is largely unimplemented
-        terminate = manager.introspect()
-    master_mdl.update_master( manager.master_model['master_name'], 
-            status = master_mdl.TERMINATED )
+    try:
+        while not terminate:
+            #handle any available runs
+            manager.manage_run()
+            #check for requests from web to manage servers
+            manager.poll_launch_requests( timeout=2 )
+            #check for requests from cluster to join the party
+            manager.poll_for_server( timeout=2)
+            #housekeeping, this is largely unimplemented
+            terminate = manager.introspect()
+        master_mdl.update_master( manager.master_model['master_name'], 
+                status = master_mdl.TERMINATED )
+    except:
+        logger.exception("We be dead")
+        raise
