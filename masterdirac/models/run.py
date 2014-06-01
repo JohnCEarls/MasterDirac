@@ -34,6 +34,16 @@ class ANRun(Model):
     date_created = UTCDateTimeAttribute( default = datetime.utcnow() )
     status = NumberAttribute( default=CONFIG )
 
+class ANRunResults(Model):
+    class Meta:
+        table_name = 'aurea-nebula-run-results'
+        region = 'us-east-1'
+    run_id = UnicodeAttribute( hash_key=True )
+    date_created = UTCDateTimeAttribute(range_key=True,
+            default = datetime.utcnow() )
+    results = JSONAttribute( default={} )
+
+
 class ANRunCheckpoint(Model):
     class Meta:
         table_name = 'aurea-nebula-run-checkpoint'
@@ -70,14 +80,14 @@ def get_ANRunArchive(run_id, archive_id = None):
     def to_dict(item):
         res = {}
         res['run_id'] = item.run_id
-        res['count'] = item.count 
-        res['bucket'] = item.bucket 
-        res['archive_manifest'] = item.archive_manifest 
+        res['count'] = item.count
+        res['bucket'] = item.bucket
+        res['archive_manifest'] = item.archive_manifest
         res['truth'] = item.truth
         if item.path is '':
-            res['path'] = None 
+            res['path'] = None
         else:
-           res['path'] = item.path 
+           res['path'] = item.path
         return res
 
     if archive_id is None:
@@ -103,7 +113,7 @@ def pack_checkpoint( run_id, num_sent, date_created=None, strain=None):
 
 def batch_checkpoint( runs ):
     with ANRunCheckpoint.batch_write() as batch:
-        items = [ANRunCheckpoint(run[0], run[2], num_sent=run[1], strain=run[3])  
+        items = [ANRunCheckpoint(run[0], run[2], num_sent=run[1], strain=run[3])
                     for run in runs]
         for item in items:
             batch.save(item)
@@ -127,15 +137,15 @@ def delete_checkpoint( run_id ):
         for item in ANRunCheckpoint.query( run_id ):
             batch.delete(item)
 
-def update_ANRun( run_id, 
-        master_name=None, 
-        workers=None, 
+def update_ANRun( run_id,
+        master_name=None,
+        workers=None,
         source_data=None,
         dest_data= None,
-        description=None, 
-        network_config=None, 
+        description=None,
+        network_config=None,
         run_settings=None,
-        intercomm_settings=None, 
+        intercomm_settings=None,
         aggregator_settings=None,
         status=None,
         data_sizes=None
@@ -169,15 +179,15 @@ def update_ANRun( run_id,
     item.save()
     return to_dict(item)
 
-def insert_ANRun( run_id, 
-        master_name=None, 
-        workers=None, 
+def insert_ANRun( run_id,
+        master_name=None,
+        workers=None,
         source_data=None,
         dest_data= None,
-        description=None, 
-        network_config=None, 
+        description=None,
+        network_config=None,
         run_settings=None,
-        intercomm_settings=None, 
+        intercomm_settings=None,
         aggregator_settings=None,
         status=None,
         data_sizes=None
@@ -252,7 +262,7 @@ def preprocess_intercomm_settings( run_id ):
         'sqs_from_data_to_agg':'from-data-to-agg-%s' % run_id ,
         'sqs_from_data_to_agg_truth':'from-data-to-agg-%s-truth' % run_id ,
         's3_from_data_to_gpu':'an-from-data-to-gpu-%s' % run_id ,
-        's3_from_gpu_to_agg':'an-from-gpu-to-agg-%s' % run_id 
+        's3_from_gpu_to_agg':'an-from-gpu-to-agg-%s' % run_id
     }
     return base
 
@@ -366,7 +376,7 @@ if __name__ == "__main__":
         's3_from_gpu_to_agg':'ndp-from-gpu-to-agg-bioc'
     }
 
-    insert_ANRun( 'default', 
+    insert_ANRun( 'default',
             source_data = default_source_data,
             dest_data = default_dest_data,
             network_config= default_network_config,
