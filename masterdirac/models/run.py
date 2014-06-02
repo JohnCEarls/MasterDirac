@@ -76,6 +76,8 @@ def insert_ANRunArchive( run_id, archive_id, count, bucket, archive_manifest, pa
     else:
         item.path = path
 
+    item.save()
+
 def get_ANRunArchive(run_id, archive_id = None):
     def to_dict(item):
         res = {}
