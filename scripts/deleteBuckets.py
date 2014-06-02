@@ -8,6 +8,8 @@ def delete(bucket_name):
     prefix = 'an-from-data-to-gpu-'
     if bucket_name[:len(prefix)] == prefix:
         return True
+    if 'test' in bucket_name.split('-'):
+        return True
     return False
 s3 = boto.connect_s3()
 del_all_pattern = '%s-lc-delete-all'
