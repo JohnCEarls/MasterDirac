@@ -8,6 +8,9 @@ def delete(bucket_name):
     prefix = 'an-from-data-to-gpu-'
     if bucket_name[:len(prefix)] == prefix:
         return True
+    prefix = 'an-from-gpu-to-agg-'
+    if bucket_name[:len(prefix)] == prefix:
+        return True
     if 'test' in bucket_name.split('-'):
         return True
     return False
@@ -29,7 +32,7 @@ for b in s3.get_all_buckets():
             if sre.error_code == 'NoSuchLifecycleConfiguration':
                 print "Setting deletion lifecycle rule"
                 lf = Lifecycle()
-                lf.add_rule( id=del_all_pattern % b.name, expiration=Expiration(days=3),
+                lf.add_rule( id=del_all_pattern % b.name, expiration=Expiration(days=1),
                         prefix='', status='Enabled',transition=None  )
                 b.configure_lifecycle(lf)
 
