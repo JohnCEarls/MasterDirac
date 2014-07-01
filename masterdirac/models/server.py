@@ -26,10 +26,13 @@ class ANServer(Model):
     worker_id = UnicodeAttribute( hash_key=True )
     server_id = UnicodeAttribute( range_key=True )
     status = NumberAttribute( default=0 )
+    sqs_queues = UnicodeSetAttribute( default=[] )
 
-def insert_ANServer( worker_id, server_id, status=0):
+def insert_ANServer( worker_id, server_id, status=0, sqs_queues=[]):
     item = ANServer( worker_id, server_id)
     item.status = status
+    if len(sqs_queues):
+        item.sqs_queues = sqs_queues
     item.save()
     return to_dict_ANS( item )
 
@@ -56,9 +59,9 @@ if __name__ == "__main__":
         ANServer.create_table( read_capacity_units=2,
             write_capacity_units=1, wait=True)
 
-    r = insert_ANServer('insert-test', 'it')
+    r = insert_ANServer('insert-test', 'it-1', sqs_queues=['q1', 'q2'])
     assert r['worker_id'] == 'insert-test'
-    assert r['server_id'] == 'it'
+    assert r['server_id'] == 'it-1'
     assert r['status'] == INIT 
 
     r = update_ANServer('insert-test', 'it', STARTING)
@@ -69,4 +72,5 @@ if __name__ == "__main__":
     assert r['status'] == get_status( 'insert-test', 'it' )
 
     r = update_ANServer('insert-test', 'it', TERMINATED)
+    
 

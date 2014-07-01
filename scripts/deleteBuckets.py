@@ -29,6 +29,7 @@ for b in s3.get_all_buckets():
                     else:
                         b.delete()
         except S3ResponseError as sre:
+            continue
             if sre.error_code == 'NoSuchLifecycleConfiguration':
                 print "Setting deletion lifecycle rule"
                 lf = Lifecycle()
