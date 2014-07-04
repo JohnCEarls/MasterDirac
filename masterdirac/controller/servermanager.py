@@ -1222,6 +1222,23 @@ def terminate_sc( worker_id ):
     else:
         wkr_mdl.update_ANWorker( worker_id,
                 status=wkr_mdl.TERMINATED_WITH_ERROR )
+    def write_to_log( base_message, q, mtype, msg):
+        log_message = base_message.copy()
+        log_message['time'] = datetime.utcnow().isoformat()
+        log_message['type'] = mtype
+        log_message['msg'] = msg
+        log_message['count'] = 99999
+        q.write( Message( body=json.dumps( log_message ) ) )
+    sqs = boto.sqs.connect_to_region("us-east-1")
+    #remove the command and response queues created by this worker
+    for q_name in worker_model['sqs_queues']:
+        try:
+            sqs.delete_queue( q_name )
+            msg = 'Deleted queue[%s]' % q_name
+            write_to_log(base_message, q, 'stdout', msg, q)
+        except Exception as e:
+            msg =  'Error attempting to delete queue[%s]' % q_name
+            write_to_log(base_message, q, 'stderr', msg, q)
 
 def start_gpu( worker_id ):
     """

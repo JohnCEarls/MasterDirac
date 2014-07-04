@@ -56,8 +56,10 @@ class ServerInterface(object):
         if self._worker_id is None:
             try:
                 wm = wkr_mdl.get_ANWorker( cluster_name = self.cluster_name )
-                if len(wm) > 0: 
+                if len(wm) > 0:
                     self._worker_id = wm[0]['worker_id']
+                    wkr_mdl.add_sqs_queues_ANWorker( self._worker_id, 
+                            [self.command_q, self.response_q] )
             except:
                 self.logger.exception("Unable to get worker_model for %s" % self.cluster_name)
         if self._worker_id is None:
@@ -70,7 +72,7 @@ class ServerInterface(object):
 
     @property
     def worker_model(self):
-        return wkr_mdl._get_ANWorker( worker_id = self.worker_id )
+        return wkr_mdl.get_ANWorker( worker_id = self.worker_id )
 
     @property
     def status(self):

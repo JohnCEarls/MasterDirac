@@ -39,6 +39,7 @@ class ANWorker(Model):
     aws_region = UnicodeAttribute(default='')
     num_nodes = NumberAttribute(default=0)
     nodes = UnicodeSetAttribute(default=[])
+    sqs_queues = UnicodeSetAttribute( default=[] )
     status = NumberAttribute(default=0)
     starcluster_config = JSONAttribute(default={})
     startup_log = UnicodeAttribute(default='')
@@ -57,13 +58,12 @@ def get_log( worker_id, date_created='0000' ):
     log_list = []
     for item in ANWorkerLog.query( worker_id, date_created__ge=date_created ):
         log_list.append((item.date_created, item.message))
-
     log_list.sort(reverse=True)
     return log_list
 
 def to_dict_ANW( item ):
     """
-    Convert workerbase to dictionary
+    Convert worker(base) to dictionary
     """
     result = {}
     for key, value in item.attribute_values.iteritems():
@@ -108,7 +108,10 @@ def insert_ANWorker( master_name, cluster_name,
     item.save()
     return to_dict_ANW(item)
 
-
+def add_sqs_queues_ANWorker( worker_id, queues ):
+    item = ANWorker.get( worker_id )
+    item.sqs_queues |= set(queues)
+    item.save()
 
 def update_ANWorker( worker_id,
             num_nodes = None,
@@ -120,7 +123,6 @@ def update_ANWorker( worker_id,
             key = None,
         ):
     item = ANWorker.get( worker_id )
-
     if num_nodes is not None:
         item.num_nodes = num_nodes
     if status is not None:
@@ -200,19 +202,9 @@ def _get_ANWorker( worker_id ):
     """
     Gets full record
     """
-    def to_dict( item ):
-        """
-        Convert workerbase to dictionary
-        """
-        result = {}
-        result['cluster_type'] = item.cluster_type
-        result['aws_region'] = item.aws_region
-        for key, value in item.attribute_values.iteritems():
-            result[key] = value
-        return result
     try:
         item = ANWorker.get( worker_id )
-        return to_dict( item )
+        return to_dict_ANW( item )
     except ANWorker.DoesNotExist as dne:
         return {}
 
@@ -360,4 +352,12 @@ if __name__ == "__main__":
             'key': 'somekey',
             'status': CONFIG,
             }
-    insert_ANWorker( **test_data )
+    #insert_ANWorker( **test_data )
+    w_id = '60170b29e2c6a009722f4441b97be661' 
+    
+    test_worker = get_ANWorker(w_id)
+    print test_worker
+    add_sqs_queues_ANWorker( test_worker['worker_id'], ['a-queue', 'another_queue'])
+    add_sqs_queues_ANWorker( test_worker['worker_id'], ['a-queue-11', 'another_queue-1hh'])
+    test_worker = get_ANWorker( w_id )
+    print test_worker

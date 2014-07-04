@@ -26,13 +26,10 @@ class ANServer(Model):
     worker_id = UnicodeAttribute( hash_key=True )
     server_id = UnicodeAttribute( range_key=True )
     status = NumberAttribute( default=0 )
-    sqs_queues = UnicodeSetAttribute( default=[] )
 
-def insert_ANServer( worker_id, server_id, status=0, sqs_queues=[]):
+def insert_ANServer( worker_id, server_id, status=0):
     item = ANServer( worker_id, server_id)
     item.status = status
-    if len(sqs_queues):
-        item.sqs_queues = sqs_queues
     item.save()
     return to_dict_ANS( item )
 
@@ -42,6 +39,11 @@ def update_ANServer( worker_id, server_id, status):
     item.save()
     return to_dict_ANS( item )
 
+def get_ANServer( worker_id, server_id=None):
+    if server_id is not None:
+        return to_dict_ANS( ANServer.get(worker_id, server_id) )
+    else:
+        return [to_dict_ANS(s) for s in ANServer.query( worker_id )]
 
 def get_status( worker_id, server_id ):
     item = ANServer.get(worker_id, server_id)
@@ -59,10 +61,15 @@ if __name__ == "__main__":
         ANServer.create_table( read_capacity_units=2,
             write_capacity_units=1, wait=True)
 
-    r = insert_ANServer('insert-test', 'it-1', sqs_queues=['q1', 'q2'])
+    r = insert_ANServer( 'insert-test', 'it-1' )
     assert r['worker_id'] == 'insert-test'
     assert r['server_id'] == 'it-1'
     assert r['status'] == INIT 
+    assert len( get_ANServer( 'insert-test') ) > 0
+    gotten = get_ANServer( 'insert-test', 'it-1')
+    for k in r.iterkeys():
+        assert r[k] == gotten[k]
+
 
     r = update_ANServer('insert-test', 'it', STARTING)
     assert r['worker_id'] == 'insert-test'

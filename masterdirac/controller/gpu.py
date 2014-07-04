@@ -25,7 +25,6 @@ class Interface(serverinterface.ServerInterface):
         self._idle = 0
         self._restarting = False
         self.set_status( svr_mdl.INIT )
-        #svr_mdl.insert_ANServer( self.cluster_name, self.server_id, svr_mdl.INIT)
         self._waiting = 0
 
     def handle_state(self):
