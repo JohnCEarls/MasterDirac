@@ -65,8 +65,6 @@ class ServerManager:
         self._master_model = self._get_master_model()
         self.logger.debug("exit __init__")
 
-   
-
     def manage_run( self ):
         logger = self.logger
         active_run = self.get_run()
@@ -286,6 +284,9 @@ class ServerManager:
         run_meta_table = run_settings[ 'run_meta_table' ]
         run_id = self._run_model['run_id']
         #TODO: put this in a model
+        """
+        DEPRECATED:  I do not think this is used anymore,
+        but I am too chicken to actually delete it
         table = Table( run_meta_table, connection = conn )
         if table.query_count( run_id__eq=run_id ) == 0:
             timestamp = datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
@@ -295,6 +296,7 @@ class ServerManager:
             #so no need to make all clients decode64 and load json
             item['k'] = run_settings[ 'k' ]
             item.save()
+        """
         return run_id
 
 
