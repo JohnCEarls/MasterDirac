@@ -25,6 +25,7 @@ from boto.s3.key import Key
 from boto.exception import S3ResponseError
 
 import datadirac.data
+import datadirac.aggregator.controller
 import masterdirac.models.master as master_mdl
 import masterdirac.models.worker as wkr_mdl
 import masterdirac.models.systemdefaults as sys_def_mdl
@@ -1000,6 +1001,26 @@ class ServerManager:
                 run_settings[ 'nets_block_size'] )
         self.k = run_settings[ 'k']
         self.base_heartbeat = run_settings['heartbeat_interval']
+
+    def cleanup_s3( self ):
+        """
+        Deletes empty buckets from old runs
+        """
+        s3 = boto.connect_s3()
+        del_all_pattern = datadirac.aggregator.controller.DEL_LIFECYCLE_PATTERN
+        for b in s3.get_all_buckets():
+            try:
+                config = b.get_lifecycle_config()
+                for r in config:
+                    if r.id == del_all_pattern % b.name:
+                           self.logger.info("Deleting bucket[s3://%s]" % b.name)
+                           b.delete()
+            except Exception as e:
+                #note: this could be thrown if bucket is not empty
+                #       in which case, we'll get them after the lifecycle
+                #       rule has run
+                msg = "Error on attempted delete of s3://%s" % b.name
+                self.logger.exception( msg )
 
 ############################################
 # Shared Worker Cluster Server startup

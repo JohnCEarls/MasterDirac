@@ -22,6 +22,8 @@ def main():
     logger = logging.getLogger(name)
     logger.info( "Starting ServerManager" )
     manager = sm.ServerManager( get_master_name()  )
+    #cleanup old buckets from previous runs
+    manager.cleanup_s3()
     terminate = False
     try:
         while not terminate:
