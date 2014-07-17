@@ -42,7 +42,7 @@ def set_system_defaults():
     if not ANSystemDefaults.exists():
         ANSystemDefaults.create_table( read_capacity_units=2,
             write_capacity_units=1, wait=True)
-
+    """
     ######################
     ###DATA CLUSTER CONFIG
     ######################
@@ -144,9 +144,38 @@ def set_system_defaults():
             }
     item.save()
 
+    #####################
+    #SNAPR config
+    ######################
+    """
+    item = ANSystemDefaults('logging', 'SNAPR')
+    item.settings = {'log_format':'%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            'external_server_name':'None',
+            'external_server_port':9021,
+            'external_server_level':50,
+            'internal_server_name':'localhost',
+            'internal_server_port':9022,
+            'internal_server_level':30,
+            'stdout_level':30,
+            'boto_level':40}
+    item.save()
+
+    item = ANSystemDefaults('logserver', 'SNAPR')
+    item.settings = {'log_format':'%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            'log':'/scratch/sgeadmin/logs',
+            'directory': '/scratch/sgeadmin/logs',
+            'log_filename':'None',
+            'interval_type':'M',
+            'interval':1,
+            'port':9022,
+            'bucket':'gpu-logging-aurea-nebula'
+            }
+    item.save()
+
 
 if __name__ == "__main__":
     set_system_defaults()
+    """
     pprint.pprint( get_system_defaults() )
     pprint.pprint( get_system_defaults( component='Data Cluster') )
     pprint.pprint( get_system_defaults( setting_name = 'logging') )
@@ -189,4 +218,4 @@ if __name__ == "__main__":
     interval_type = ls_settings[ 'interval_type' ]
     interval = int(ls_settings[ 'interval'])
     log_format = ls_settings[ 'log_format' ]
-    port = ls_settings[ 'port' ]
+    port = ls_settings[ 'port' ]"""
