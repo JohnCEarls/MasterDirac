@@ -171,6 +171,14 @@ def set_system_defaults():
             'bucket':'gpu-logging-aurea-nebula'
             }
     item.save()
+    
+    item = ANSystemDefaults( 'directories', 'SNAPR' )
+    item.settings = {'source': '/scratch/sgeadmin/source',
+            'results': '/scratch/sgeadmin/results',
+            'log':'/scratch/sgeadmin/logs'
+            }
+    item.save()
+
 
 
 if __name__ == "__main__":
