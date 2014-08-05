@@ -6,6 +6,7 @@ from datetime import datetime
 import logging
 import boto.ec2
 import boto.exception
+from boto.s3.key import Key
 import masterdirac.models.master as master_mdl
 import hashlib
 import random
@@ -51,7 +52,7 @@ def add_s3_file(bucket_name, key,  filename=None,
     md5 = k.md5
     if filename is None:
         _, filename = os.path.split( key )
-    file_object_id = hashlib.md5('%s%i'%(md5,random.randint(0,9999)).hexdigest())
+    file_object_id = hashlib.md5('%s%i'%(md5,random.randint(0,9999))).hexdigest()
     item = ANFileObject(file_object_id)
     item.name = filename
     if description:
@@ -68,9 +69,24 @@ def add_s3_file(bucket_name, key,  filename=None,
     item.save()
     return file_object_id
 
-
-
 if __name__ == "__main__":
+    """
+    def simp_cb( bytes_transmit, bytes_total ):
+        print "%i of %i" % (bytes_transmit, bytes_total)
+    if not ANFileObject.exists():
+        ANFileObject.create_table( read_capacity_units=2, write_capacity_units=2,
+                wait=True)
+    if not ANProcessObject.exists():
+        ANProcessObject.create_table( read_capacity_units=2, write_capacity_units=2,
+                wait=True)"""
+    conn =  boto.connect_s3()
+    bucket = conn.get_bucket('an-scratch-bucket')
+    k = Key(bucket, 'test-upload.tmp2')
+    k.set_contents_from_filename( '/scratch/sgeadmin/random.tmp')#, cb=simp_cb)
 
+
+    """
+    add_s3_file('an-scratch-bucket', 'test-upload.tmp', 
+            'this is a test', metadata= {'created-by': 'John C. Earls'})"""
     #TODO: test
-    
+    print "Ignore" 
