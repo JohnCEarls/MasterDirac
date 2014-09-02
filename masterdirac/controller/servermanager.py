@@ -131,14 +131,15 @@ class ServerManager:
         Checks for messages indicating that a worker server has started
         and is waiting for instructions
         """
-        self.logger.debug("Polling for server[%s]" % self.init_q.id )
-        messages = self.init_q.get_messages( wait_time_seconds = timeout )
-        self.logger.debug("[%i] server init messages" % self.init_q.count() )
-        for mess in messages:
-            serv_mess = json.loads( mess.get_body() )
-            self.logger.debug("Recieved init [%r]" % serv_mess)
-            self._handle_server_init( serv_mess )
-            self.init_q.delete_message( mess )
+        while self.init_q.count() > 0:
+            self.logger.debug("Polling for server[%s]" % self.init_q.id )
+            messages = self.init_q.get_messages( wait_time_seconds = timeout )
+            self.logger.debug("[%i] server init messages" % self.init_q.count() )
+            for mess in messages:
+                serv_mess = json.loads( mess.get_body() )
+                self.logger.debug("Recieved init [%r]" % serv_mess)
+                self._handle_server_init( serv_mess )
+                self.init_q.delete_message( mess )
 
     def introspect(self):
         """
