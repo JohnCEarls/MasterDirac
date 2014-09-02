@@ -99,11 +99,12 @@ class ServerManager:
         Checks launcher_q_in for messages from web server
         Stuff like start cluster, etc.
         """
-        messages = self.launcher_q_in.get_messages( wait_time_seconds = timeout )
-        for mess in messages:
-            launch_mess = json.loads( mess.get_body() )
-            self.launcher_q_in.delete_message( mess )
-            self._handle_launcher( launch_mess )
+        while self.launcher_q_in.count() > 0:
+            messages = self.launcher_q_in.get_messages( wait_time_seconds = timeout )
+            for mess in messages:
+                launch_mess = json.loads( mess.get_body() )
+                self.launcher_q_in.delete_message( mess )
+                self._handle_launcher( launch_mess )
 
     def poll_sc_logging( self, timeout=2):
         messages = self.sc_logging_q.get_messages(num_messages=10,
