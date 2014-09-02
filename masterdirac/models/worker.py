@@ -110,7 +110,8 @@ def insert_ANWorker( master_name, cluster_name,
 
 def add_sqs_queues_ANWorker( worker_id, queues ):
     item = ANWorker.get( worker_id )
-    item.sqs_queues |= set(queues)
+    qs = [q for q in item.sqs_queues] + list(queues)
+    item.sqs_queues = set( qs )
     item.save()
 
 def update_ANWorker( worker_id,
