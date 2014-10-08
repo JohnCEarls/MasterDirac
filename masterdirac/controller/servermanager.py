@@ -566,19 +566,16 @@ class ServerManager:
                 ' and status is wrong [%r]') % (worker_id, worker_model))
             raise Exception(('Attempted to start server[%s] and'
                 ' it is not in a READY stat') % (worker_id) )
-        if worker_model['cluster_type'] == "Dual GPU":
+        if worker_model['instance_type'] in ['cg1.4xlarge']:
             start_process = multiprocessing.Process( target = start_gpu,
                 args=( worker_id, ),
                 name=worker_id)
             start_process.start()
-        elif worker_model['cluster_type'] == "Data Cluster":
+        else:
             start_process = multiprocessing.Process( target = start_data,
                 args=( worker_id, ),
                 name=worker_id)
             start_process.start()
-        else:
-            raise Exception('unimplemented')
-
 
     def activate_run(self, run_id):
         run_model = run_mdl.get_ANRun( run_id = run_id )
