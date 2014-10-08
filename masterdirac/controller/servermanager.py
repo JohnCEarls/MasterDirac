@@ -566,7 +566,7 @@ class ServerManager:
                 ' and status is wrong [%r]') % (worker_id, worker_model))
             raise Exception(('Attempted to start server[%s] and'
                 ' it is not in a READY stat') % (worker_id) )
-        if worker_model['instance_type'] in ['cg1.4xlarge']:
+        if worker_model['starcluster_config']['instance_type'] in ['cg1.4xlarge']:
             start_process = multiprocessing.Process( target = start_gpu,
                 args=( worker_id, ),
                 name=worker_id)
