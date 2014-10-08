@@ -566,7 +566,7 @@ class ServerManager:
                 ' and status is wrong [%r]') % (worker_id, worker_model))
             raise Exception(('Attempted to start server[%s] and'
                 ' it is not in a READY stat') % (worker_id) )
-        if worker_model['starcluster_config']['instance_type'] in ['cg1.4xlarge']:
+        if worker_model['starcluster_config']['node_instance_type'] in ['cg1.4xlarge']:
             start_process = multiprocessing.Process( target = start_gpu,
                 args=( worker_id, ),
                 name=worker_id)
@@ -603,33 +603,29 @@ class ServerManager:
                 ' and status is wrong [%r]') % (worker_id, worker_model))
             raise Exception(('Attempted to stop server [%s] and'
                 ' it is not in a RUNNING stat') % (worker_id) )
-        if worker_model['cluster_type'] == "Dual GPU":
+        if worker_model['starcluster_config']['node_instance_type'] in ['cg1.4xlarge']:
             stop_process = multiprocessing.Process( target = stop_gpu,
                 args=( worker_id, ),
                 name=worker_id)
             stop_process.start()
-        elif worker_model['cluster_type'] == "Data Cluster":
+        else:
             stop_process = multiprocessing.Process( target = stop_data,
                 args=( worker_id, ),
                 name=worker_id)
             stop_process.start()
-        else:
-            raise Exception('unimplemented')
 
     def status_server(self,  worker_id ):
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
-        if worker_model['cluster_type'] == "Dual GPU":
+        if worker_model['starcluster_config']['node_instance_type'] in ['cg1.4xlarge']:
             status_process = multiprocessing.Process( target = status_gpu,
                 args=( worker_id, ),
                 name=worker_id)
             status_process.start()
-        elif worker_model['cluster_type'] == "Data Cluster":
+        else:
             status_process = multiprocessing.Process( target = status_data,
                 args=( worker_id, ),
                 name=worker_id)
             status_process.start()
-        else:
-            raise Exception('unimplemented')
 
     def check_cluster_state(self):
         """
