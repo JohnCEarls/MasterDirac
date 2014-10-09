@@ -157,6 +157,7 @@ class ServerManager:
         for k,server in self.data_servers.iteritems():
             if state_change:
                 server.refresh_status()
+            server.cluster_active()
             server.handle_state()
             if server.terminated:
                 server.delete_queues()

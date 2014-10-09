@@ -31,6 +31,19 @@ class ServerInterface(object):
         return boto.ec2.connect_to_region( self.region )
 
     @property
+    def nodes( self ):
+        wm = self.worker_model
+        inst = self.conn.get_only_instances(instance_ids=list(wm['nodes']))
+        return inst
+
+    @property
+    def cluster_active(self):
+        for node in self.nodes:
+            if node.state not in ['running']:
+               self.logger.warning( "%r is not running %r" % (node.id, node.state) ) 
+            self.logger.warning("%r is not running %r" % (node.id, node.state) )
+
+    @property
     def instance(self):
         inst = self.conn.get_only_instances(instance_ids=[self.instance_id])
         return inst[0]
