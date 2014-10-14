@@ -10,6 +10,7 @@ import base64
 import multiprocessing
 import subprocess
 import cgi
+import re
 
 import numpy as np
 
@@ -154,7 +155,8 @@ class ServerManager:
         if state_change:
             self.logger.info("A subprocess has changed state")
         poppable = []
-        for k,server in self.data_servers.iteritems():
+
+        for k, server in self.data_servers.iteritems():
             if state_change:
                 server.refresh_status()
             server.cluster_active()
@@ -180,6 +182,7 @@ class ServerManager:
         self.poll_sc_logging()
         self.run_completed()
         return False
+
 
     def run_completed( self ):
         for run in run_mdl.get_active_ANRun():
@@ -558,6 +561,9 @@ class ServerManager:
                     cgi.escape(mess['msg']) )
             log['worker_id'] = mess['worker_id']
             log['time'] = mess['time']
+        if mess['action'] == 'status' and re.match(r'.* not running', mess['msg']):
+            wkr_mdl.update_ANWorker( worker_id=mess['worker_id'], 
+                    status=wkr_mdl.READY )
         return log
 
     def activate_server(self, worker_id):
@@ -962,6 +968,7 @@ class ServerManager:
         """
         Run if a model does not already exist
         """
+        self.logger.debug("Checking if cluster active")
         self.logger.info("Initializing Master Model")
         master_name = self._master_name
         instance_id = boto.utils.get_instance_metadata()['instance-id']
@@ -1160,6 +1167,7 @@ def terminate_sc( worker_id ):
     else:
         wkr_mdl.update_ANWorker( worker_id,
                 status=wkr_mdl.TERMINATED_WITH_ERROR )
+
     def write_to_log( base_message, q, mtype, msg):
         log_message = base_message.copy()
         log_message['time'] = datetime.utcnow().isoformat()

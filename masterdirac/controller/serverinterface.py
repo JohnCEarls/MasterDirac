@@ -38,10 +38,11 @@ class ServerInterface(object):
 
     @property
     def cluster_active(self):
+        self.logger.debug("Checking if cluster active")
         for node in self.nodes:
             if node.state not in ['running']:
                self.logger.warning( "%r is not running %r" % (node.id, node.state) ) 
-            self.logger.warning("%r is not running %r" % (node.id, node.state) )
+            self.logger.debug("%r instance state: %r" % (node.id, node.state) )
 
     @property
     def instance(self):
