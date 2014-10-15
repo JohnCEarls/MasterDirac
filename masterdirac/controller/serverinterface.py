@@ -42,7 +42,8 @@ class ServerInterface(object):
         for node in self.nodes:
             if node.state not in ['running']:
                self.logger.warning( "%r is not running %r" % (node.id, node.state) ) 
-            self.logger.debug("%r instance state: %r" % (node.id, node.state) )
+               return False
+        return True
 
     @property
     def instance(self):

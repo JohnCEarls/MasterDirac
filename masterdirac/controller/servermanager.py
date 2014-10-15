@@ -29,6 +29,7 @@ import datadirac.data
 import datadirac.aggregator.controller
 import masterdirac.models.master as master_mdl
 import masterdirac.models.worker as wkr_mdl
+import masterdirac.models.server as svr_mdl
 import masterdirac.models.systemdefaults as sys_def_mdl
 import masterdirac.models.run as run_mdl
 from masterdirac.utils import hddata_process, dtypes
@@ -159,7 +160,10 @@ class ServerManager:
         for k, server in self.data_servers.iteritems():
             if state_change:
                 server.refresh_status()
-            server.cluster_active()
+            if not server.cluster_active:
+                server.set_status( svr_mdl.TERMINATED)
+                wkr_mdl.update_ANWorker(worker_id=server.worker_id,
+                        status=wkr_mdl.CLUSTER_ERROR )
             server.handle_state()
             if server.terminated:
                 server.delete_queues()
