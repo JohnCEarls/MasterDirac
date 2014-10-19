@@ -1,6 +1,7 @@
 import boto.utils
 import time
 import logging
+import masterdirac.models.worker as wkr_mdl
 
 def get_master_name():
     """
@@ -24,6 +25,8 @@ def main():
     manager = sm.ServerManager( get_master_name()  )
     #cleanup old buckets from previous runs
     manager.cleanup_s3()
+    #move terminated instances to archive database
+    wkr_mdl.archive_workers()
     terminate = False
     try:
         while not terminate:

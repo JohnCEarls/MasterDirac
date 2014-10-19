@@ -21,6 +21,8 @@ TERMINATING = 37
 TERMINATED = 40
 
 active_statuses = [CONFIG, STARTING, READY, RUNNING, MARKED_FOR_TERMINATION, CLUSTER_ERROR]
+#These are worker statuses that should be archived
+archive_statuses = [TERMINATED_WITH_ERROR,  TERMINATED]
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,27 @@ class ANWorker(Model):
     """
     class Meta:
         table_name='aurea-nebula-worker'
+        region = 'us-east-1'
+    worker_id = UnicodeAttribute( hash_key=True )
+    master_name = UnicodeAttribute( default='' )
+    cluster_name = UnicodeAttribute( default=''  )
+    cluster_type = UnicodeAttribute(default='data')
+    date_created = UTCDateTimeAttribute( default=datetime.utcnow() )
+    aws_region = UnicodeAttribute(default='')
+    num_nodes = NumberAttribute(default=0)
+    nodes = UnicodeSetAttribute(default=[])
+    sqs_queues = UnicodeSetAttribute( default=[] )
+    status = NumberAttribute(default=0)
+    starcluster_config = JSONAttribute(default={})
+    startup_log = UnicodeAttribute(default='')
+    startup_pid = UnicodeAttribute(default='')
+    key = UnicodeAttribute(default = '')
+
+class ANWorkerArchive(Model):
+    """
+    """
+    class Meta:
+        table_name='aurea-nebula-worker-archive'
         region = 'us-east-1'
     worker_id = UnicodeAttribute( hash_key=True )
     master_name = UnicodeAttribute( default='' )
@@ -159,6 +182,29 @@ def get_ANWorker( worker_id=None, master_name=None, cluster_name=None ):
                 continue
             results.append( to_dict_ANW( item ) )
         return results
+
+def insert_ANWorkerArchive(worker ):
+    item = ANWorkerArchive( worker.worker_id )
+    item.master_name = worker.master_name
+    item.cluster_name = worker.cluster_name
+    item.cluster_type = worker.cluster_type
+    item.aws_region = worker.aws_region
+    item.num_nodes = worker.num_nodes
+    item.status = worker.status
+    item.starcluster_config = worker.starcluster_config
+    item.startup_log = worker.startup_log
+    item.startup_pid = worker.startup_pid
+    item.key = worker.key
+    item.save()
+
+def archive_workers( ):
+    ANWorkerArchive.create_table( read_capacity_units=2,
+        write_capacity_units=1, wait=True)
+    for item in ANWorker.scan():
+        if item.status in archive_statuses:
+            insert_ANWorkerArchive( item )
+            item.delete()
+
 
 def get_active_workers(branch=None):
     """
