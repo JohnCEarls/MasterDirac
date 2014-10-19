@@ -26,6 +26,13 @@ class ANServer(Model):
     worker_id = UnicodeAttribute( hash_key=True )
     server_id = UnicodeAttribute( range_key=True )
     status = NumberAttribute( default=0 )
+#**********************
+#WORKER ID is CLUSTER NAME here
+#*************************
+
+#really have no idea why that is.  Need to see if changing that 
+#breaks anything
+
 
 def insert_ANServer( worker_id, server_id, status=0):
     item = ANServer( worker_id, server_id)
@@ -33,18 +40,27 @@ def insert_ANServer( worker_id, server_id, status=0):
     item.save()
     return to_dict_ANS( item )
 
+#**********************
+#WORKER ID is CLUSTER NAME here
+#*************************
 def update_ANServer( worker_id, server_id, status):
     item = ANServer( worker_id, server_id)
     item.status = status
     item.save()
     return to_dict_ANS( item )
 
+#**********************
+#WORKER ID is CLUSTER NAME here
+#*************************
 def get_ANServer( worker_id, server_id=None):
     if server_id is not None:
         return to_dict_ANS( ANServer.get(worker_id, server_id) )
     else:
         return [to_dict_ANS(s) for s in ANServer.query( worker_id )]
 
+#**********************
+#WORKER ID is CLUSTER NAME here
+#*************************
 def get_status( worker_id, server_id ):
     item = ANServer.get(worker_id, server_id)
     return item.status

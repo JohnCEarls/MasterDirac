@@ -5,6 +5,7 @@ import boto.ec2
 import boto.sqs
 import collections
 import masterdirac.models.worker as wkr_mdl
+import time
 
 import masterdirac.models.server as svr_mdl
 
@@ -146,6 +147,11 @@ class ServerInterface(object):
         try:
             conn = boto.sqs.connect_to_region( 'us-east-1' )
             rq = conn.get_queue( self.command_q )
+            ctr = 0
+            while rq.count() > 0 and ctr < 10:
+                #give process some time to clean up if necessary
+                time.sleep(ctr)
+                ctr += 1
             conn.delete_queue( rq )
         except Exception as e:
             self.logger.error("Attempted to delete %s" % self.response_q )

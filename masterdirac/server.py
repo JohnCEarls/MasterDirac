@@ -39,4 +39,6 @@ def main():
                 status = master_mdl.TERMINATED )
     except:
         logger.exception("We be dead")
+        master_mdl.update_master( manager.master_model['master_name'], 
+                status = master_mdl.TERMINATED_WITH_ERROR )
         raise

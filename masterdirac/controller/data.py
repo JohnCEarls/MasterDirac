@@ -19,10 +19,6 @@ class Interface(serverinterface.ServerInterface):
         self.logger = logging.getLogger(self.unique_id)
         self.logger.info("Data Interface created")
         self.num_nodes = init_message['num-nodes']
-        self.set_status( svr_mdl.INIT )
-
-    def handle_state(self):
-        self.get_responses()
         self.check_response()
         state = self.status
         self.logger.debug("handle_state[%s]" % state)

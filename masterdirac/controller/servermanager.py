@@ -53,6 +53,7 @@ class ServerManager:
         self.work = collections.deque()
         self._rc = collections.defaultdict(int)
         self._complete_timeout = None
+        self._active_workers = None
         self.gpu_servers = {}
         self.data_servers = {}
         self.aws_locations = {}
@@ -157,13 +158,10 @@ class ServerManager:
             self.logger.info("A subprocess has changed state")
         poppable = []
 
+        self._update_active_workers()
+
         for k, server in self.data_servers.iteritems():
-            if state_change:
-                server.refresh_status()
-            if not server.cluster_active:
-                server.set_status( svr_mdl.TERMINATED)
-                wkr_mdl.update_ANWorker(worker_id=server.worker_id,
-                        status=wkr_mdl.CLUSTER_ERROR )
+            server.refresh_status()
             server.handle_state()
             if server.terminated:
                 server.delete_queues()
@@ -171,18 +169,49 @@ class ServerManager:
         for p in poppable:
             self.data_servers.pop( p )
 
+
         poppable = []
         for k,server in self.gpu_servers.iteritems():
-            if state_change:
-                server.refresh_status()
+            server.refresh_status()
             server.handle_state()
             if server.terminated:
                 self.logger.warning(" add delete quees when debugged")
-                #server.delete_queues()
+                server.delete_queues()
                 poppable.append(k)
         for p in poppable:
             self.gpu_servers.pop( p )
-
+        #make sure all active worker are available
+        active_worker_change = False
+        self.logger.debug("Checking clusters")
+        running_stats = [wkr_mdl.READY, wkr_mdl.RUNNING]
+        for worker in self.active_workers:
+            if worker['status'] not in running_stats:
+                #only checking for workers supposed to be active 
+                pass
+            self.logger.debug("Checking cluster activity worker[%s]" % (
+                    worker['worker_id']))
+            self.logger.debug("Checking cluster activity worker[%s]" % (
+                    worker['worker_id']))
+            ec2 = boto.ec2.connect_to_region( worker['aws_region'] )
+            cluster_fail = False
+            for node in ec2.get_only_instances( instance_ids = list( worker['nodes'] )):
+                if node.state not in ['running'] and worker['status'] in running_stats:
+                    self.logger.warning( "%s has a bad node %s[%s]" % ( 
+                            worker['worker_id'], node.id, node.state) )
+                    cluster_fail = True
+                    break
+            if cluster_fail:
+                wkr_mdl.update_ANWorker( worker_id = worker['worker_id'],
+                        status= wkr_mdl.CLUSTER_ERROR )
+                servers = svr_mdl.get_ANServer( worker['cluster_name'] )
+                for server in servers:
+                    if server['status'] != svr_mdl.TERMINATED:
+                        svr_mdl.update_ANServer( worker_id=worker['cluster_name'],
+                            server_id = server['server_id'],
+                            status = svr_mdl.TERMINATED)
+                active_worker_change = True
+        if active_worker_change:
+            self._update_active_workers()
         self.poll_sc_logging()
         self.run_completed()
         return False
@@ -508,7 +537,6 @@ class ServerManager:
                         source_data[ 'synonym_file'],
                         source_data[ 'agilent_file']
                     ]
-        conn = boto.connect_s3()
         source_bucket = conn.get_bucket( source_data['bucket'] )
         for key in source_keys:
             if not source_bucket.get_key( key , validate=True):
@@ -547,6 +575,9 @@ class ServerManager:
         lgt=''
         if mess['type'] == 'system':
             lgt = '-success'
+            #system messages are mainly start and end of processes,
+            #so update worker information
+            self._update_active_workers()
         if mess['type'] == 'stderr':
             lgt = '-danger'
         if mess['type'] == 'stdout':
@@ -568,9 +599,13 @@ class ServerManager:
         if mess['action'] == 'status' and re.match(r'.* not running', mess['msg']):
             wkr_mdl.update_ANWorker( worker_id=mess['worker_id'], 
                     status=wkr_mdl.READY )
+        self.logger.DEBUG( "%r" % mess ) 
         return log
 
     def activate_server(self, worker_id):
+        """
+        Launches data processing services on workers
+        """
         worker_model = wkr_mdl.get_ANWorker( worker_id=worker_id )
         if worker_model['status'] != wkr_mdl.READY:
             self.logger.error(( 'Attempted to start server[%s]'
@@ -989,6 +1024,14 @@ class ServerManager:
 
             )
 
+    @property
+    def active_workers( self ):
+        if self._active_workers is None:
+            self._update_active_workers()
+        return self._active_workers
+
+    def _update_active_workers(self):
+        self._active_workers = wkr_mdl.get_active_workers( self._local_settings['branch'] )
 
     def _get_local_settings(self):
         return sys_def_mdl.get_system_defaults( 'local_settings', 'Master' )
@@ -1306,6 +1349,11 @@ def gpu_daemon( worker_id, gpu_id=0, action='start'):
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh status'" % gpu_id
     if action == 'stop':
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh stop'" % gpu_id
+        svr_models = svr_mdl.get_ANServer( cluster_name)
+        for model in svr_models:
+            if model['status'] != svr_mdl.TERMINATED:
+                svr_mdl.update_ANServer( cluster_name , model['server_id'],
+                        svr_mdl.TERMINATED)
     if action == 'restart':
         sc_command += "'bash /home/sgeadmin/GPUDirac/scripts/gpuserver%i.sh restart'" % gpu_id
     base_message['command'] = sc_command
@@ -1340,6 +1388,11 @@ def data_daemon( worker_id, action="start"):
     if action == 'status':
         sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh status'"
     if action == 'stop':
+        svr_models = svr_mdl.get_ANServer( cluster_name)
+        for model in svr_models:
+            if model['status'] != svr_mdl.TERMINATED:
+                svr_mdl.update_ANServer( cluster_name , model['server_id'],
+                        svr_mdl.TERMINATED)
         sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh stop'"
     if action == 'restart':
         sc_command += "'bash /home/sgeadmin/DataDirac/scripts/datadirac.sh restart'"

@@ -7,7 +7,7 @@ import hashlib
 import pprint
 class ANSystemDefaults(Model):
     class Meta:
-        table_name='aurea-nebula-system-defaults-dev'
+        table_name='aurea-nebula-system-defaults'
         region = 'us-east-1'
     setting_name = UnicodeAttribute( hash_key = True )
     component = UnicodeAttribute( range_key = True )
@@ -42,7 +42,7 @@ def set_system_defaults():
     if not ANSystemDefaults.exists():
         ANSystemDefaults.create_table( read_capacity_units=2,
             write_capacity_units=1, wait=True)
-
+    """
     ######################
     ###DATA CLUSTER CONFIG
     ######################
@@ -50,7 +50,7 @@ def set_system_defaults():
     item = ANSystemDefaults('logging', 'Data Cluster')
     item.settings = {
             'logging_file':'/scratch/sgeadmin/logs/datadirac.log',
-            'log_bucket':'datadirac-logging-aurea-nebula-dev',
+            'log_bucket':'datadirac-logging-aurea-nebula',
             'log_s3_name_format': 'logs/datadirac/%s-%s.log',
             'level':'WARNING',
             'boto_level':'ERROR',
@@ -60,7 +60,7 @@ def set_system_defaults():
     item = ANSystemDefaults('cluster_init', 'Data Cluster')
     item.settings = {'data_log_dir': '/scratch/sgeadmin/data_log',
                     'working_dir': '/scratch/sgeadmin/working',
-                    'init-queue':'tcdirac-master-dev'}
+                    'init-queue':'tcdirac-master'}
     item.save()
 
     ################
@@ -69,8 +69,8 @@ def set_system_defaults():
 
     item = ANSystemDefaults('local_settings', 'Master')
     item.settings = {'working_dir': '/scratch/sgeadmin/master',
-            'init-queue':'tcdirac-master-dev',
-            'branch':'develop'
+            'init-queue':'tcdirac-master',
+            'branch':'master'
             }
     item.save()
 
@@ -87,19 +87,18 @@ def set_system_defaults():
     item.save()
 
     item = ANSystemDefaults('launcher_config', 'Master')
-    item.settings = {'launcher_sqs_in':'aurea-nebula-launcher-in-dev',
-            'launcher_sqs_out':'aurea-nebula-launcher-out-dev',
+    item.settings = {'launcher_sqs_in':'aurea-nebula-launcher-in',
+            'launcher_sqs_out':'aurea-nebula-launcher-out',
             'starcluster_bin' : '/home/sgeadmin/.local/bin/starcluster',
-            'sc_config_url' : 'https://aurea-nebula-dev.adversary.us/cm/config',
-            'startup_logging_queue': 'sc-logging-queue-dev',
-            'key_location':'/home/sgeadmin'
-            }
+            'sc_config_url' : 'https://aurea-nebula.adversary.us/cm/config',
+            'startup_logging_queue': 'sc-logging-queue',
+            'key_location':'/home/sgeadmin'}
     item.save()
 
     item = ANSystemDefaults('loggingserver', 'Master')
     item.settings = {'directory':'/scratch/sgeadmin/logs',
         'log_filename':'None',
-        'bucket':'diraclog-dev',
+        'bucket':'aurea-nebula-logging',
         'log_format':'%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         'interval_type':'M',
         'interval':1,
@@ -118,7 +117,7 @@ def set_system_defaults():
     item.save()
 
     item = ANSystemDefaults( 'queues', 'Dual GPU')
-    item.settings = {'init_q': 'tcdirac-master-dev'}
+    item.settings = {'init_q': 'tcdirac-master'}
     item.save()
 
     item = ANSystemDefaults('logging', 'Dual GPU')
@@ -141,13 +140,50 @@ def set_system_defaults():
             'interval_type':'M',
             'interval':1,
             'port':9022,
-            'bucket':'gpu-logging-aurea-nebula-dev'
+            'bucket':'gpu-logging-aurea-nebula'
+            }
+    item.save()
+
+    #####################
+    #SNAPR config
+    ######################
+    """
+    item = ANSystemDefaults('logging', 'SNAPR')
+    item.settings = {'log_format':'%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            'external_server_name':'None',
+            'external_server_port':9021,
+            'external_server_level':50,
+            'internal_server_name':'localhost',
+            'internal_server_port':9022,
+            'internal_server_level':30,
+            'stdout_level':30,
+            'boto_level':40}
+    item.save()
+
+    item = ANSystemDefaults('logserver', 'SNAPR')
+    item.settings = {'log_format':'%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            'log':'/scratch/sgeadmin/logs',
+            'directory': '/scratch/sgeadmin/logs',
+            'log_filename':'None',
+            'interval_type':'M',
+            'interval':1,
+            'port':9022,
+            'bucket':'gpu-logging-aurea-nebula'
+            }
+    item.save()
+    
+    item = ANSystemDefaults( 'directories', 'SNAPR' )
+    item.settings = {'source': '/scratch/sgeadmin/source',
+            'results': '/scratch/sgeadmin/results',
+            'log':'/scratch/sgeadmin/logs'
             }
     item.save()
 
 
+
 if __name__ == "__main__":
     set_system_defaults()
+    """
     pprint.pprint( get_system_defaults() )
     pprint.pprint( get_system_defaults( component='Data Cluster') )
     pprint.pprint( get_system_defaults( setting_name = 'logging') )
@@ -190,4 +226,4 @@ if __name__ == "__main__":
     interval_type = ls_settings[ 'interval_type' ]
     interval = int(ls_settings[ 'interval'])
     log_format = ls_settings[ 'log_format' ]
-    port = ls_settings[ 'port' ]
+    port = ls_settings[ 'port' ]"""
