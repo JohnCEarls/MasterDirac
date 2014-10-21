@@ -537,6 +537,7 @@ class ServerManager:
                         source_data[ 'synonym_file'],
                         source_data[ 'agilent_file']
                     ]
+        conn = boto.connect_s3()
         source_bucket = conn.get_bucket( source_data['bucket'] )
         for key in source_keys:
             if not source_bucket.get_key( key , validate=True):
@@ -599,7 +600,7 @@ class ServerManager:
         if mess['action'] == 'status' and re.match(r'.* not running', mess['msg']):
             wkr_mdl.update_ANWorker( worker_id=mess['worker_id'], 
                     status=wkr_mdl.READY )
-        self.logger.DEBUG( "%r" % mess ) 
+        self.logger.debug( "%r" % mess ) 
         return log
 
     def activate_server(self, worker_id):
@@ -792,10 +793,11 @@ class ServerManager:
                         'message': 'Activating run_id:%s' % launch_mess['run_id']}
                 self.launcher_q_out.write( Message( body=json.dumps( mess ) ) )
             except Exception as e:
-                self.logger.exception( "Attempt to terminate cluster failed [%r]" % (
+                self.logger.exception( "Attempt to activate run failed [%r]" % (
                     launch_mess))
-                self.logger.error( "Abort termination")
-                self._abort_launch( launch_mess, e )
+                self.logger.warning("Attempting to resend")
+                self.launcher_q_in.write(Message( body=json.dumps( launch_mess )),
+                    delay_seconds = 120)
         elif launch_mess['action'] == 'reassign-master':
             try:
                 run_mdl.update_ANRun( launch_mess['run_id'], master_name=this._master_name)
