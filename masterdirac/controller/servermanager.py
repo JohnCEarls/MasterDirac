@@ -218,6 +218,7 @@ class ServerManager:
 
 
     def run_completed( self ):
+        self.logger.debug("Looking for complete runs")
         for run in run_mdl.get_active_ANRun():
             if run['master_name'] != self._master_name:
                 #run does not belong to this master
@@ -237,25 +238,46 @@ class ServerManager:
                     work = run['intercomm_settings']['sqs_from_data_to_gpu']
                     result = run['intercomm_settings']['sqs_from_gpu_to_agg']
                     work_queue = conn.get_queue( work )
+                    self.logger.debug("%s has %i elements in d2g q." % 
+                            (run['run_id'], work_queue.count()))
                     if work_queue is None or work_queue.count() == 0:
+                        self.logger.debug('A')
                         rq = conn.get_queue( result )
                         rcount = rq.count()
                         if self._rc[run['run_id']] == rcount:
+                            self.logger.debug('B')
                             if self._complete_timeout is None:
+                                self.logger.debug('C')
                                 self._complete_timeout = datetime.now() + timedelta( minutes= 1, seconds=rq.get_timeout() )
                             elif self._complete_timeout < datetime.now():
+                                self.logger.debug('D')
                                 self.logger.info("Marking %s complete" % (
                                     run['run_id']))
                                 run_mdl.update_ANRun( run['run_id'], 
                                                       status=run_mdl.COMPLETE )
                                 self._complete_timeout = None
+                                #not proud of this
+                                #but a hack that works ...
+                                self.logger.warning("Restarting GPU servers")
+                                for k,server in self.gpu_servers.iteritems():
+                                    try:
+                                        server.hard_restart()
+                                    except:
+                                        self.logger.exception("Error restarting gpu")
+                                        self.logger.error("%s: %r" %( k,server))
+
+                            else:
+                                self.logger.info("Run appears complete, marking in %s " % (str(self._complete_timeout - datetime.now())))
                         else:
+                            self.logger.debug('E')
                             self._complete_timeout = None
                             self._rc[run['run_id']] = rcount
                         #TODO: delete data to gpu queue
+                    """
                     else:
+                        self.logger.debug('F')
                         self._complete_timeout = None
-                        self._rc[run['run_id']] = -1 
+                        self._rc[run['run_id']] = -1 """
                 except:
                     self.logger.error("Failed to mark %s complete" % ( 
                         run['run_id']) )
@@ -795,9 +817,14 @@ class ServerManager:
             except Exception as e:
                 self.logger.exception( "Attempt to activate run failed [%r]" % (
                     launch_mess))
-                self.logger.warning("Attempting to resend")
-                self.launcher_q_in.write(Message( body=json.dumps( launch_mess )),
-                    delay_seconds = 120)
+                run = run_mdl.get_ANRun( launch_mess['run_id'] )
+                if run['status'] == run_mdl.CONFIG:
+                    #another run is currently active
+                    #requeue
+                    self.logger.warning("Attempting to resend")
+                    self.launcher_q_in.write(Message( body=json.dumps( launch_mess )),
+                        delay_seconds = 120)
+
         elif launch_mess['action'] == 'reassign-master':
             try:
                 run_mdl.update_ANRun( launch_mess['run_id'], master_name=this._master_name)
