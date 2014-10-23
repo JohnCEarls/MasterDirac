@@ -13,6 +13,7 @@ import masterdirac.models.server as svr_mdl
 from datetime import datetime, timedelta
 import servermanager as sm
 import multiprocessing
+import random
 
 class Interface(serverinterface.ServerInterface):
     def __init__(self, init_message, master_name):
@@ -30,6 +31,9 @@ class Interface(serverinterface.ServerInterface):
     def handle_state(self):
         self.get_responses()
         self.handle_heartbeat()
+        if not self.cluster_active:
+            #cluster down
+            self.set_status( svr_mdl.TERMINATED )
         state = self.status
         self.logger.debug("state[%i]" % state)
         if state == svr_mdl.INIT:
@@ -37,8 +41,11 @@ class Interface(serverinterface.ServerInterface):
         elif state == svr_mdl.WAITING:
             self.send_init()
         elif state == svr_mdl.TERMINATED:
+            self.logger.warning("Cleanup takes a minute")
             self.delete_queues()
         elif state==svr_mdl.RESTARTING and self._restart_timeout < datetime.now():
+            self.hard_restart()
+        if random.random() < .01:
             self.hard_restart()
 
     def send_init( self ):

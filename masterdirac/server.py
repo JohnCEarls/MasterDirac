@@ -38,6 +38,8 @@ def main():
             manager.poll_for_server( timeout=2)
             #housekeeping, this is largely unimplemented
             terminate = manager.introspect()
+            terminate = False
+        self.logger.warning("Master was Terminated")
         master_mdl.update_master( manager.master_model['master_name'], 
                 status = master_mdl.TERMINATED )
     except:

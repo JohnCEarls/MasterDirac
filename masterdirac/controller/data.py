@@ -25,8 +25,10 @@ class Interface(serverinterface.ServerInterface):
     def handle_state(self):
         self.get_responses()
         self.check_response()
+        if not self.cluster_active:
+            #cluster down
+            self.set_status( svr_mdl.TERMINATED )
         state = self.status
-
         self.logger.debug("handle_state[%s]" % state)
         if state == svr_mdl.INIT:
             self.send_init()

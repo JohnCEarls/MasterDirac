@@ -11,6 +11,7 @@ import multiprocessing
 import subprocess
 import cgi
 import re
+import random
 
 import numpy as np
 
@@ -184,14 +185,12 @@ class ServerManager:
         active_worker_change = False
         self.logger.debug("Checking clusters")
         running_stats = [wkr_mdl.READY, wkr_mdl.RUNNING]
+
         for worker in self.active_workers:
-            if worker['status'] not in running_stats:
+            if worker['status'] not in running_stats or random.random() < .9:
                 #only checking for workers supposed to be active 
+                #and only do this 10 percent of the time
                 pass
-            self.logger.debug("Checking cluster activity worker[%s]" % (
-                    worker['worker_id']))
-            self.logger.debug("Checking cluster activity worker[%s]" % (
-                    worker['worker_id']))
             ec2 = boto.ec2.connect_to_region( worker['aws_region'] )
             cluster_fail = False
             for node in ec2.get_only_instances( instance_ids = list( worker['nodes'] )):
@@ -213,7 +212,10 @@ class ServerManager:
         if active_worker_change:
             self._update_active_workers()
         self.poll_sc_logging()
-        self.run_completed()
+        try:
+            self.run_completed()
+        except:
+            self.logger.exception("Error looking for completed runs")
         return False
 
 

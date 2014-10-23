@@ -142,8 +142,8 @@ class ServerInterface(object):
             rq = conn.get_queue( self.response_q )
             conn.delete_queue( rq )
         except Exception as e:
-            self.logger.error("Attempted to delete %s" % self.response_q )
-            self.logger.exception("ST:")
+            self.logger.error("Attempted to delete %s, already gone" % self.response_q )
+            #self.logger.exception("ST:")
         try:
             conn = boto.sqs.connect_to_region( 'us-east-1' )
             rq = conn.get_queue( self.command_q )
@@ -154,5 +154,5 @@ class ServerInterface(object):
                 ctr += 1
             conn.delete_queue( rq )
         except Exception as e:
-            self.logger.error("Attempted to delete %s" % self.response_q )
-            self.logger.exception("ST")
+            self.logger.error("Attempted to delete %s, already gone" % self.response_q )
+            #self.logger.exception("ST")
